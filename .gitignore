@@ -1,0 +1,14 @@
+# Data (not shared -- see README Data availability)
+/data/*
+!/data/.gitkeep
+!/data/field_data_template.xlsx
+
+# R
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj.user
+
+# OS
+.DS_Store
+Thumbs.db
