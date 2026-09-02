@@ -24,8 +24,9 @@ predictions). Uncertainty is quantified using a cluster design effect (DEFF)
 survey-cluster structure -- a different approach from Study 2, which retains
 a simpler patch-size-based correction (L=30m) at regional scale.
 
-STATUS: R-side script review complete (25 files). GEE-side deployment
-scripts not yet reviewed.
+STATUS: R-side script review complete (25 files). GEE-side review in
+progress (11 files so far, covering the core national deployment and
+the Table S3 per-ROI comparison).
 
 ## Repository structure
 
@@ -58,9 +59,27 @@ seagrass-agc-countrywide-indonesia/
 │   ├── calc_SDdata_AGC.R                field-uncertainty scalar + Method B
 │   ├── recompute_N_chapter5_DEFF.R      adopted uncertainty method (DEFF/ICC)
 │   └── check_DEFF_by_year_chapter5.R    validity check for pooled DEFF
-├── gee/   -- not yet reviewed
+├── gee/
+│   ├── 01_trainingData_prep_indo.js       extracts GSE+depth at training points
+│   ├── 02_PROB_rf_modelDev_indo.js        PA model
+│   ├── 02b_seagrassExtent_indo.js         persistence mask (from 02's output)
+│   ├── 03_MORPHO_rf_modelDev_indo.js      morphology model
+│   ├── 04_COVER_rf_modelDev_indo.js       SPC model (two-step workflow)
+│   ├── 05_AGB_rf_modelDev_indo.js         AGB model
+│   ├── 06_cIndex_rf_modelDev_indo.js      carbon index model
+│   ├── 07_AGC_rf_modelDev_indo.js         final AGC model (two-step workflow)
+│   ├── 08_AGC_rf_modelUncer_indo.js       national total AGC + DEFF/ICC CI
+│   ├── export_ROI_collection.js           builds the named-ROI asset
+│   └── 09_AGC_rf_compare_indo.js          per-ROI Method A vs B (Table S3)
 └── data/  -- not included, see Data availability below
 ```
+
+STATUS: GEE-side review in progress. Scripts covering the core national
+deployment (01-08) and the Table S3 per-ROI comparison (export_ROI_collection,
+09) are complete. Remaining scripts from the original inventory not yet
+reviewed: 07_AGC_rf_calculationC (a possible v9/v10 variant), and any
+indoMPA/indoROI-specific variants of the model-uncertainty script beyond the
+national one already included, plus the GEE_Apps/ viewer scripts.
 
 ## Suggested execution order
 
@@ -108,6 +127,15 @@ from third-party sources are subject to the data-sharing policies of the
 original providers and are not included here (see the paper's Data
 Availability statement once published).
 
+**GEE asset paths**: all Earth Engine asset paths in `gee/*.js` are
+placeholders (`ASSET_ROOT = 'projects/YOUR-GEE-PROJECT/assets/YOUR-FOLDER'`).
+The underlying assets themselves (training points, bathymetry, model
+outputs, etc.) are private to the corresponding author's Earth Engine
+account and are not made public -- this mirrors how field survey data is
+handled on the R side. The code documents the full workflow and is
+reusable with an equivalent set of assets under your own GEE project;
+it is not runnable as-is without them.
+
 ## Exploratory work not included
 
 Two supplementary analyses were carried out locally but are not part of
@@ -124,6 +152,16 @@ the paper:
   to choose which ROIs to feature when comparing the two estimation
   methods for the paper -- an internal decision-making step, not itself
   a reported result.
+- **Interactive AGC/Sentinel-2 validation viewer**: a personal visual
+  QA tool (adjustable PA-probability slider over a Sentinel-2 true-colour
+  composite) used during development, not a script that produces a
+  reported figure or table.
+- **Earlier per-ROI Method A vs B comparison script**: superseded by
+  09_AGC_rf_compare_indo.js. The earlier version used the pre-DEFF/ICC,
+  L=30-based uncertainty formula and didn't explicitly target Table S3;
+  the current version removes that (locally non-representative)
+  uncertainty calculation and formats its output directly as Table S3
+  rows.
 
 ## Interactive AGC Viewer
 
