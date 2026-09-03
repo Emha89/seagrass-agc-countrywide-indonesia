@@ -8,6 +8,8 @@ preparation). **From Area-Based to Pixel-Based: A Country-Wide Approach for
 Seagrass Above-Ground Carbon Estimation in Tropical Coastal Ecosystems**.
 
 Companion repositories for the earlier chapters in this thesis:
+- Chapter 3 (field data harmonization):
+  [seagrass-agc-fieldharmonization-indonesia](https://github.com/Emha89/seagrass-agc-fieldharmonization-indonesia)
 - Chapter 4, Study 1 (GSE spectral percent-cover):
   [seagrass-spc-gse-indonesia](https://github.com/Emha89/seagrass-spc-gse-indonesia)
 - Chapter 4, Study 2 (proxy-based AGC, 6 regions):
