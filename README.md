@@ -70,16 +70,17 @@ seagrass-agc-countrywide-indonesia/
 │   ├── 07_AGC_rf_modelDev_indo.js         final AGC model (two-step workflow)
 │   ├── 08_AGC_rf_modelUncer_indo.js       national total AGC + DEFF/ICC CI
 │   ├── export_ROI_collection.js           builds the named-ROI asset
-│   └── 09_AGC_rf_compare_indo.js          per-ROI Method A vs B (Table S3)
+│   ├── 09_AGC_rf_compare_indo.js          per-ROI Method A vs B (Table S3)
+│   └── GEE_Apps/
+│       └── 09_AGC_timeSeries_forecast_app.js   live App (see below)
 └── data/  -- not included, see Data availability below
 ```
 
-STATUS: GEE-side review in progress. Scripts covering the core national
-deployment (01-08) and the Table S3 per-ROI comparison (export_ROI_collection,
-09) are complete. Remaining scripts from the original inventory not yet
-reviewed: 07_AGC_rf_calculationC (a possible v9/v10 variant), and any
-indoMPA/indoROI-specific variants of the model-uncertainty script beyond the
-national one already included, plus the GEE_Apps/ viewer scripts.
+STATUS: GEE-side review complete for the core national deployment
+(01-08), the Table S3 per-ROI comparison, and the App. Remaining
+scripts from the original inventory not reviewed: 07_AGC_rf_calculationC
+(a possible v9/v10 variant) and any indoMPA/indoROI-specific variants of
+the model-uncertainty script beyond the national one already included.
 
 ## Suggested execution order
 
@@ -162,12 +163,27 @@ the paper:
   the current version removes that (locally non-representative)
   uncertainty calculation and formats its output directly as Table S3
   rows.
+- **Alternate GEE Apps, superseded or not in current use**: an earlier
+  App revision (v8r2, superseded by the App included here), an
+  MPA-dropdown App with live Monte Carlo ensemble training (a different,
+  more expensive design than the pre-computed-asset Apps kept here), and
+  a separate ROI-dropdown comparison App -- none of these are the
+  currently published Apps.
 
 ## Interactive AGC Viewer
 
-Annual AGC predictions and uncertainty for Indonesia's Marine Protected
-Areas are available at:
+A live App lets you draw a polygon anywhere in Indonesia and see annual
+AGC totals (2017-2024, with DEFF/ICC confidence intervals) plus a
+forecast to 2027, at:
 https://muhammadhafizt.users.earthengine.app/view/seagrassagcmpaindonsesia
+
+Source: `gee/GEE_Apps/09_AGC_timeSeries_forecast_app.js`.
+
+A second script, used to view every proxy layer (PA, morphology, SPC,
+AGB, carbon index, AGC) across all of Indonesia and its 6 study
+locations, by year, is available directly in the GEE Code Editor
+(requires a Google/GEE account to open):
+https://code.earthengine.google.com/308cd0b53b30d84902fe450210c17236
 
 ## Citation
 
