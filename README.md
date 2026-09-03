@@ -73,7 +73,8 @@ seagrass-agc-countrywide-indonesia/
 │   ├── 09_AGC_rf_compare_indo.js          per-ROI Method A vs B (Table S3)
 │   └── GEE_Apps/
 │       └── 09_AGC_timeSeries_forecast_app.js   live App (see below)
-└── data/  -- not included, see Data availability below
+└── data/
+    └── field_data_template.xlsx   column headers only, see Data availability below
 ```
 
 STATUS: GEE-side review complete for the core national deployment
@@ -127,6 +128,15 @@ This repository contains **analysis code only**. Field survey data compiled
 from third-party sources are subject to the data-sharing policies of the
 original providers and are not included here (see the paper's Data
 Availability statement once published).
+
+**Field data template**: `data/field_data_template.xlsx` documents the
+exact column headers the R and GEE scripts expect, across three sheets:
+`GT_Label_Data` (identity, PA, tSPC, morphology, AGB, AGC -- read by
+`01_build_master_raw.R`), `Species_Composition` (per-species percent
+cover, joined on `compositio` -- read by the same script), and
+`GSE_Training_PerYear` (reference only: the GSE band + depth columns
+`01_trainingData_prep_indo.js` extracts automatically, not filled in by
+hand). Raw data is not included; only the template.
 
 **GEE asset paths**: all Earth Engine asset paths in `gee/*.js` are
 placeholders (`ASSET_ROOT = 'projects/YOUR-GEE-PROJECT/assets/YOUR-FOLDER'`).
