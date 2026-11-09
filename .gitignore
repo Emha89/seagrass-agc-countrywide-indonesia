@@ -1,13 +1,15 @@
-# Data (not shared -- see README Data availability)
+# Field data and results (not shared -- see README, Data availability)
+/result/
 /data/*
-!/data/.gitkeep
-!/data/field_data_template.xlsx
+!/data/README.md
+!/data/master_raw_template.csv
 
 # R
 .Rhistory
 .RData
 .Rproj.user/
 *.Rproj.user
+Rplots.pdf
 
 # OS
 .DS_Store

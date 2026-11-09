@@ -1,215 +1,171 @@
-# Country-Wide Seagrass Above-Ground Carbon Estimation
+# Seagrass above-ground carbon across Indonesia: pixel-based and area-based estimates
 
-R and Google Earth Engine scripts for:
+R and Google Earth Engine (GEE) scripts for:
 
-Hafizt, M., Roelfsema, C., Phinn, S., Lyons, M., Wicaksono, P., Salsabila, H.N.,
-McMahon, K., Hernawan, U.E., Irawan, A., Adi, N.S., & Rahmawati, S. (in
-preparation). **From Area-Based to Pixel-Based: A Country-Wide Approach for
-Seagrass Above-Ground Carbon Estimation in Tropical Coastal Ecosystems**.
+Hafizt, M., McMahon, K., Roelfsema, C., Hernawan, U.E., Adi, N.S., Lyons, M.,
+Phinn, S. (in preparation). **Pixel-based and area-based estimates of seagrass
+above-ground carbon across Indonesia tested on the same held-out samples.**
 
-Companion repositories for the earlier chapters in this thesis:
-- Chapter 3 (field data harmonization):
-  [seagrass-agc-fieldharmonization-indonesia](https://github.com/Emha89/seagrass-agc-fieldharmonization-indonesia)
-- Chapter 4, Study 1 (GSE spectral percent-cover):
-  [seagrass-spc-gse-indonesia](https://github.com/Emha89/seagrass-spc-gse-indonesia)
-- Chapter 4, Study 2 (proxy-based AGC, 6 regions):
-  [seagrass-agc-proxy-indonesia](https://github.com/Emha89/seagrass-agc-proxy-indonesia)
+The scripts map seagrass above-ground carbon (AGC, gC m⁻²) and percent cover at
+10 m across Indonesia for 2017–2024 with random forest models on Google
+Satellite Embeddings (GSE, 64 bands). On one fixed seagrass extent they compare
+three national estimates:
 
-## Overview
+- **Pixel-based**: the sum of the mapped AGC over all extent pixels.
+- **Tier 1**: extent area × one field mean AGC.
+- **Tier 2**: area of each cover class × the field mean AGC of that class
+  (classes < 30 %, 30–59.9 % and ≥ 60 %).
 
-This repository extends the proxy-based AGC framework from Chapter 4 (Study
-2) to country-wide coverage across Indonesia, and compares two ways of
-estimating total AGC: an **area-based** approach (persistence area x mean
-density) and a **pixel-based** approach (summing per-pixel model
-predictions). Uncertainty is quantified using a cluster design effect (DEFF)
-/ intraclass correlation (ICC) framework, reflecting the compiled field data's
-survey-cluster structure -- a different approach from Study 2, which retains
-a simpler patch-size-based correction (L=30m) at regional scale.
+All three methods are tested on the same held-out samples under five
+validation designs, from held-out pixels to held-out ecoregions:
 
-STATUS: R-side script review complete (25 files). GEE-side review in
-progress (11 files so far, covering the core national deployment and
-the Table S3 per-ROI comparison).
+| Design | Held-out unit | Distance to the nearest training sample |
+|---|---|---|
+| `pixel` | 10 m pixel | ≤ 10 m |
+| `b100` | 100 m block | 10–100 m |
+| `b1000` | 1 km block | 100 m–1 km |
+| `cluster` | meadow cluster (DBSCAN, 5 km) | 1–20 km |
+| `ecoregion` | marine ecoregion (MEOW) | > 20 km |
 
 ## Repository structure
 
 ```
 seagrass-agc-countrywide-indonesia/
 ├── R/
-│   ├── func_reg_rf.R                    shared regression utilities
-│   ├── func_class_rf.R                  shared classification utilities
-│   ├── 01_build_master_raw.R            builds master_raw_<year>.csv
-│   ├── A1_rf_model_PA.R                 PA model
-│   ├── A2_rf_applyModel_PA.R
-│   ├── B1_rf_model_leafMorpho.R         morphology model
-│   ├── B2_rf_applyModel_leafMorpho.R
-│   ├── B3_rf_evalModel_leafMorpho.R
-│   ├── C1_rf_model_cIndex.R             carbon index model
-│   ├── C2_rf_applyModel_cIndex.R
-│   ├── C3_rf_evalModel_cIndex.R
-│   ├── D1_rf_model_SPC.R                percent cover model
-│   ├── D2_rf_applyModel_SPC.R
-│   ├── D3_rf_evalModel_SPC.R
-│   ├── 04_build_master_AGB_AGC.R        builds master_AGB/AGC_<year>.csv
-│   │                                     (run twice -- see execution order)
-│   ├── E1_rf_model_AGB.R                AGB model
-│   ├── E2_rf_applyModel_AGB.R
-│   ├── E3_rf_evalModel_AGB.R
-│   ├── F1_rf_model_AGC.R                final AGC model
-│   ├── F2_rf_applyModel_AGC.R
-│   ├── F3_rf_evalModel_AGC.R
-│   ├── 22_compile_training_GEE.R        compiles the full GEE training asset
-│   ├── calc_SDdata_AGC.R                field-uncertainty scalar + Method B
-│   ├── recompute_N_chapter5_DEFF.R      adopted uncertainty method (DEFF/ICC)
-│   └── check_DEFF_by_year_chapter5.R    validity check for pooled DEFF
+│   ├── P4_00_config_functions.R   configuration (edit the CONFIG block) and shared functions
+│   ├── P4_01_build_training.R     training tables, validation groups, ecoregions, DBSCAN clusters
+│   ├── P4_02_tuning.R             random forest settings (pixel-grouped CV)
+│   ├── P4_03_validation.R         out-of-fold predictions for the five designs (long run)
+│   ├── P4_04_metrics.R            RMSE, MAE, R², MEC and bias; accuracy against distance
+│   ├── P4_05_tier_uncertainty.R   Tier 1 and Tier 2 means, design effect, effective sample size
+│   ├── P4_06_gee_prepare.R        training table and ecoregion shapefile for the GEE upload
+│   ├── P4_07_gee_results.R        national, ecoregion and ROI tables from the GEE exports
+│   ├── P4_08_figures.R            figures of the paper and the supplement
+│   └── P4_09_tables.R             tables of the paper and the supplement
 ├── gee/
-│   ├── 01_trainingData_prep_indo.js       extracts GSE+depth at training points
-│   ├── 02_PROB_rf_modelDev_indo.js        PA model
-│   ├── 02b_seagrassExtent_indo.js         persistence mask (from 02's output)
-│   ├── 03_MORPHO_rf_modelDev_indo.js      morphology model
-│   ├── 04_COVER_rf_modelDev_indo.js       SPC model (two-step workflow)
-│   ├── 05_AGB_rf_modelDev_indo.js         AGB model
-│   ├── 06_cIndex_rf_modelDev_indo.js      carbon index model
-│   ├── 07_AGC_rf_modelDev_indo.js         final AGC model (two-step workflow)
-│   ├── 08_AGC_rf_modelUncer_indo.js       national total AGC + DEFF/ICC CI
-│   ├── export_ROI_collection.js           builds the named-ROI asset
-│   ├── 09_AGC_rf_compare_indo.js          per-ROI Method A vs B (Table S3)
-│   └── GEE_Apps/
-│       └── 09_AGC_timeSeries_forecast_app.js   live App (see below)
+│   ├── P4_G00_extract_gse.js      GSE values at the training samples (current dataset version)
+│   ├── P4_G01_train_apply.js      AGC and cover models, core extent, annual maps 2017–2024
+│   ├── P4_G02_totals.js           area and AGC sums by year, ecoregion, cover class and ROI
+│   ├── P4_G03_extent_coverage.js  samples inside the extent; distance to the nearest AGC sample
+│   ├── P4_G04_temporal.js         between-year CV of AGC; GSE similarity between years
+│   ├── P4_G05_extent_sensitivity.js  extent under three geomorphic mask options
+│   ├── P4_G06_addon_maps.js       add-on extent and maps (see below)
+│   ├── P4_G07_addon_tables.js     sums of G02, G03 and G04 for the add-on extent
+│   ├── P4_G08_figure_grid.js      ~500 m cell sums for the national map figures
+│   ├── P4_G08b_zoom_windows.js    10 m zoom windows (Rote, Derawan, Seribu Islands, Selayar)
+│   ├── P4_G09_pa_cv.js            cross-validation of the presence model at three thresholds
+│   └── P4_G10_export_zenodo.js    GeoTIFF export of the extent and annual maps (open data)
 └── data/
-    └── field_data_template.xlsx   column headers only, see Data availability below
+    ├── README.md                  input format
+    └── master_raw_template.csv    column headers of the field input table (no data)
 ```
 
-STATUS: GEE-side review complete for the core national deployment
-(01-08), the Table S3 per-ROI comparison, and the App. Remaining
-scripts from the original inventory not reviewed: 07_AGC_rf_calculationC
-(a possible v9/v10 variant) and any indoMPA/indoROI-specific variants of
-the model-uncertainty script beyond the national one already included.
+## Requirements
 
-## Suggested execution order
+- R ≥ 4.1 with `dplyr`, `readr`, `tidyr`, `purrr`, `ggplot2`, `scales`, `tibble`,
+  `ranger`, `sf`, `dbscan` and `FNN`; for the figures also `terra`, `patchwork`,
+  `ggrepel` and `maps`.
+- A Google Earth Engine account and a Cloud project for the GEE scripts.
 
-Similar to the Study 2 repository, several stages here depend on
-outputs from later-numbered scripts, and one script needs to run
-twice:
+## Setup
 
-1. `01_build_master_raw.R` -- produces `master_raw_<year>.csv`
-2. `A1_rf_model_PA.R` then `A2_rf_applyModel_PA.R` -- produces
-   `predicted_PA_<year>.csv`
-3. `B1_rf_model_leafMorpho.R` then `B2_rf_applyModel_leafMorpho.R` --
-   produces `predicted_MORPH3_probs_<year>.csv` (needs step 2's output)
-4. `C1_rf_model_cIndex.R` then `C2_rf_applyModel_cIndex.R` -- needs
-   only step 2's output; produces `predicted_CINDEX_<year>.csv`
-5. `D1_rf_model_SPC.R` then `D2_rf_applyModel_SPC.R` -- needs step 3's
-   morphology probabilities; produces `predicted_tSPC_<year>.csv`
-6. `04_build_master_AGB_AGC.R` -- **pass 1**: produces
-   `master_AGB_<year>.csv` (needs step 5's output). Also writes
-   `master_AGC_<year>.csv` at this point, but with `tAGB_pred` all NA
-   since step 7 hasn't run yet -- not usable for training until pass 2.
-7. `E1_rf_model_AGB.R` then `E2_rf_applyModel_AGB.R` -- produces
-   `predicted_tAGB_<year>.csv`
-8. `04_build_master_AGB_AGC.R` again -- **pass 2**: re-run so that
-   `master_AGC_<year>.csv` picks up step 7's `tAGB_pred` values
-9. `F1_rf_model_AGC.R`, `F2_rf_applyModel_AGC.R`, `F3_rf_evalModel_AGC.R`
-10. Any `*_evalModel_*.R` script (B3, C3, D3, E3) can run any time
-    after its matching apply-model step above.
-11. `22_compile_training_GEE.R` -- needs every stage's `training_*.csv`
-    to exist (i.e. run after step 9)
-12. `calc_SDdata_AGC.R`, `recompute_N_chapter5_DEFF.R`, and
-    `check_DEFF_by_year_chapter5.R` -- all need `training_AGC.csv`
-    (from step 9); the latter two are the adopted uncertainty method
-    and its per-year validity check respectively.
+1. Set the working directory to the `R/` folder (each script has a commented
+   `setwd()` line at the top).
+2. Edit the CONFIG block of `P4_00_config_functions.R`. The paths are relative
+   to `R/` (`../result`, `../result/P4v2`, `../data/MEOW/...`). You can also
+   define a list `CFG_USER` with your own values before sourcing the file; it
+   overrides the defaults.
+3. In every GEE script, set `ASSET_ROOT` to your own asset folder
+   (placeholder: `projects/YOUR-GEE-PROJECT/assets`).
 
-**Confirmed predictor set for the final AGC model** (a meaningful
-difference from Study 2): `F1_rf_model_AGC.R` uses only the 64 GSE
-bands plus `tAGB_pred`, `carbon_index`, and `tSPC_pred` as predictors --
-no depth, no PA_prob, no morphology probabilities. See that script's
-own header for details.
+## Run order
+
+R and GEE steps alternate. Files exported by GEE to Google Drive are copied to
+`<out_dir>/gee/` before the next R step.
+
+1. **Training tables.** `P4_01_build_training.R`, then `P4_06_gee_prepare.R`.
+   Upload `P4_gee_training.csv` and `P4_meow_indo.shp` to GEE.
+2. **GSE version (optional).** `P4_G00_extract_gse.js` re-extracts the 64 GSE
+   values at every sample from the current dataset version. Set `gse_path` in
+   `P4_00` to the exported CSV and rerun `P4_01` and `P4_06`.
+3. **Tuning.** `P4_02_tuning.R`. Copy the values in `P4_best_params.csv` to
+   `RF_AGC` and `RF_COV` in `P4_G01` (`mtry` → `variablesPerSplit`,
+   `min_node_size` → `minLeafPopulation`, `sample_fraction` → `bagFraction`).
+4. **Maps.** `P4_G01_train_apply.js`. The console prints a fingerprint of the
+   training table, which must match the one printed by `P4_06`.
+5. **Validation (while GEE runs).** `P4_03_validation.R` (1–2 h), then
+   `P4_05_tier_uncertainty.R`.
+6. **Add-on extent.** `P4_G06_addon_maps.js`, then `P4_G07_addon_tables.js`.
+7. **Sums and checks.** `P4_G02_totals.js`, `P4_G03_extent_coverage.js`,
+   `P4_G04_temporal.js` and `P4_G05_extent_sensitivity.js`. Set `roi_path` in
+   `P4_00` to `<out_dir>/gee/P4_roi_polygons.geojson`.
+8. **Results.** `P4_04_metrics.R`, then `P4_07_gee_results.R`.
+9. **Figure inputs.** `P4_G08_figure_grid.js`, `P4_G08b_zoom_windows.js` and
+   `P4_G09_pa_cv.js`.
+10. **Figures and tables.** `P4_08_figures.R` and `P4_09_tables.R`. Figures are
+    printed; uncomment the `ggsave()` lines to write the files.
+11. **Open data.** `P4_G10_export_zenodo.js` writes the extent and the annual
+    AGC and cover maps as GeoTIFFs.
+
+Each script prints its version and lists what it reads and writes in its
+header. All outputs carry the prefix `P4_`.
+
+### Core and add-on extent
+
+The seagrass extent is shallow water (Allen Coral Atlas depth 0–5 m) with a
+maximum annual presence probability ≥ 0.7, minus the Allen Coral Atlas
+geomorphic class Terrestrial Reef Flat. In `P4_G01` the geomorphic test also
+removed shallow pixels that have no geomorphic data. `P4_G06` maps these pixels
+as an add-on with the same models, settings and grid, without changing the
+`P4_G01` assets. The final extent and maps are core plus add-on; `P4_07` and
+`P4_09` add the two sets of sums.
+
+## Inputs
+
+- **Field data** (not shared): one table per survey year,
+  `master_raw_<year>.csv`, with the columns described in `data/README.md`.
+- **Marine Ecoregions of the World** (Spalding et al., 2007), NoCoast
+  version, from UNEP-WCMC.
+- **GEE assets** (private to the corresponding author's account): the
+  maximum presence probability mask, the Allen Coral Atlas bathymetry and
+  geomorphic layers clipped to Indonesia, the presence training points, the ROI
+  polygons and the ecoregion polygons. Google Satellite Embeddings
+  (`GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL`) and Sentinel-2 are read from the
+  public Earth Engine catalog.
+
+The code documents the full workflow and runs with an equivalent set of inputs
+under your own GEE project; it does not run as-is without them.
 
 ## Data availability
 
-This repository contains **analysis code only**. Field survey data compiled
-from third-party sources are subject to the data-sharing policies of the
-original providers and are not included here (see the paper's Data
-Availability statement once published).
+The field data are owned by several Indonesian institutions and were collected
+through national survey programmes. Under Indonesian data-sharing policy they
+cannot be redistributed publicly. They are available from the corresponding
+author on reasonable request and with permission from the data custodians.
 
-**Field data template**: `data/field_data_template.xlsx` documents the
-exact column headers the R and GEE scripts expect, across three sheets:
-`GT_Label_Data` (identity, PA, tSPC, morphology, AGB, AGC -- read by
-`01_build_master_raw.R`), `Species_Composition` (per-species percent
-cover, joined on `compositio` -- read by the same script), and
-`GSE_Training_PerYear` (reference only: the GSE band + depth columns
-`01_trainingData_prep_indo.js` extracts automatically, not filled in by
-hand). Raw data is not included; only the template.
+The seagrass extent and the annual AGC and cover maps for 2017–2024 are
+available at Zenodo (DOI to be added). Format of the files written by
+`P4_G10_export_zenodo.js`:
 
-**GEE asset paths**: all Earth Engine asset paths in `gee/*.js` are
-placeholders (`ASSET_ROOT = 'projects/YOUR-GEE-PROJECT/assets/YOUR-FOLDER'`).
-The underlying assets themselves (training points, bathymetry, model
-outputs, etc.) are private to the corresponding author's Earth Engine
-account and are not made public -- this mirrors how field survey data is
-handled on the R side. The code documents the full workflow and is
-reusable with an equivalent set of assets under your own GEE project;
-it is not runnable as-is without them.
+| File | Bands | Type | Values | NoData |
+|---|---|---|---|---|
+| `P4_seagrass_extent*.tif` | `extent` | UInt8 | 1 = core, 2 = add-on | 0 |
+| `P4_seagrass_AGC_cover_<year>*.tif` | `AGC_x10`, `cover_x10` | UInt16 | AGC (gC m⁻²) × 10, cover (%) × 10 | 65535 |
 
-## Exploratory work not included
-
-Two supplementary analyses were carried out locally but are not part of
-this repository, because neither directly produces a result reported in
-the paper:
-
-- **Spatial correlation length (L) via variogram**: an earlier attempt
-  at the national uncertainty correction, producing unstable/implausible
-  fits (spurious "hump" shapes, fitted ranges of hundreds of km) because
-  the training data is a compilation of discrete field campaigns, not a
-  spatially continuous survey. Replaced entirely by the cluster design
-  effect (DEFF/ICC) approach in `recompute_N_chapter5_DEFF.R`.
-- **Pixel-based vs area-based ROI selection**: exploratory analysis used
-  to choose which ROIs to feature when comparing the two estimation
-  methods for the paper -- an internal decision-making step, not itself
-  a reported result.
-- **Interactive AGC/Sentinel-2 validation viewer**: a personal visual
-  QA tool (adjustable PA-probability slider over a Sentinel-2 true-colour
-  composite) used during development, not a script that produces a
-  reported figure or table.
-- **Earlier per-ROI Method A vs B comparison script**: superseded by
-  09_AGC_rf_compare_indo.js. The earlier version used the pre-DEFF/ICC,
-  L=30-based uncertainty formula and didn't explicitly target Table S3;
-  the current version removes that (locally non-representative)
-  uncertainty calculation and formats its output directly as Table S3
-  rows.
-- **Alternate GEE Apps, superseded or not in current use**: an earlier
-  App revision (v8r2, superseded by the App included here), an
-  MPA-dropdown App with live Monte Carlo ensemble training (a different,
-  more expensive design than the pre-computed-asset Apps kept here), and
-  a separate ROI-dropdown comparison App -- none of these are the
-  currently published Apps.
-
-## Interactive AGC Viewer
-
-A live App lets you draw a polygon anywhere in Indonesia and see annual
-AGC totals (2017-2024, with DEFF/ICC confidence intervals) plus a
-forecast to 2027, at:
-https://muhammadhafizt.users.earthengine.app/view/seagrassagcmpaindonsesia
-
-Source: `gee/GEE_Apps/09_AGC_timeSeries_forecast_app.js`.
-
-A second script, used to view every proxy layer (PA, morphology, SPC,
-AGB, carbon index, AGC) across all of Indonesia and its 6 study
-locations, by year, is available directly in the GEE Code Editor
-(requires a Google/GEE account to open):
-https://code.earthengine.google.com/308cd0b53b30d84902fe450210c17236
+Grid: EPSG:4326, native map grid (about 10 m). Large products are split into
+tiles by GEE (suffix `-0000000000-0000000000`).
 
 ## Citation
 
-_(to be added once the paper is accepted)_
+To be added on publication.
 
 ## License
 
-This project is licensed under the MIT License -- see the
-[LICENSE](LICENSE) file for details. Field data used to produce the
-results are not covered by this license -- see Data availability above.
+MIT License (see [LICENSE](LICENSE)). The field data used to produce the
+results are not covered by this license.
 
 ## Contact
 
-Muhammad Hafizt
-School of the Environment, The University of Queensland, Brisbane, Australia
-National Research and Innovation Agency of Indonesia (BRIN)
-m.hafizt@uq.edu.au
+Muhammad Hafizt, School of the Environment, The University of Queensland,
+Australia, and Research Centre for Oceanography, National Research and
+Innovation Agency (BRIN), Indonesia. m.hafizt@uq.edu.au
