@@ -59,7 +59,7 @@
 
 # setwd("path/to/seagrass-agc-countrywide-indonesia/R")   # folder that holds these scripts
 source("P4_00_config_functions.R")
-cat("P4_09_tables.R | version 2026-11-09\n")
+cat("P4_09_tables.R | version 2026-11-09b\n")
 
 # -----------------------------------------------------------------------------
 # TABLE CONFIG -- edit here only
@@ -845,7 +845,7 @@ if (file.exists(pa_cv_f)) {
   }
   save_table("S5", "P4_S5_presence_cv.csv",
              "Table S5. Five-fold cross-validation of the seagrass presence model at three probability thresholds.",
-             S5, c("Random forest in GEE (smileRandomForest: 500 trees, 10 variables per split, minimum leaf 3, bag fraction 0.8, seed 42) on the 64 GSE bands and ACA depth; training points 2018-2023; random folds (seed 42). Script P4_G09 repeats the cross-validation of the thesis presence model.",
+             S5, c("Random forest in GEE (smileRandomForest: 500 trees, 10 variables per split, minimum leaf 3, bag fraction 0.8, seed 42) on the 64 GSE bands and ACA depth; training points 2018-2023; random folds (seed 42). The folds and settings are those of the presence model that defined the extent.",
                    "Presences: field quadrats with cover > 0; absences: quadrats with zero cover and non-seagrass areas of the Allen Coral Atlas.",
                    "The extent uses 0.7 (MaxProb over the eight annual probability layers).",
                    cnt_note))
