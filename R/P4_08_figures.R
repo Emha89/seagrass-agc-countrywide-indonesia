@@ -19,24 +19,29 @@
 # workflow (first cited in Methods) is Fig 1 and the study area is Fig 2.
 # Only the label and file name of the study area figure changed.
 #
+# Update 10 Nov 2026b: the expected-performance map moved to the supplement
+# (main Fig 5 -> S7), so main Fig 6-9 became Fig 5-8 and S7-S8 became S8-S9.
+# Figure content is unchanged; labels, object names and file names follow the
+# new numbers (incl. P4_Fig8c_window_summary.csv / _years.csv, read by P4_10).
+#
 # Main figures
 #   Fig 1  Workflow diagram (drawn separately, not by this script)
 #   Fig 2  Study area: ecoregions, extent, AGC samples; extent share vs sample share (was Fig 1)
 #   Fig 3  Mean AGC 2017-2024: national grid + four 10 m zoom windows       (was Fig 2)
 #   Fig 4  RMSE, R2 and MEC against distance to the nearest training sample (was Fig 3)
-#   Fig 5  Expected performance: extent by distance to AGC samples          (was Fig 4)
-#   Fig 6  National totals 2017-2024 (three methods) + survey composition   (was Fig 5)
-#   Fig 7  Ecoregions: totals by method + leave-one-ecoregion-out bias      (was Fig 6)
-#   Fig 8  22 ROIs: field mean vs map mean, final map and out-of-fold        (was Fig 7)
-#   Fig 9  Temporal: AGC CV map, GSE similarity between years, AGC by year at
-#          the sample pixels of the zoom windows                             (was Fig 8)
+#   Fig 5  National totals 2017-2024 (three methods) + survey composition   (was Fig 6)
+#   Fig 6  Ecoregions: totals by method + leave-one-ecoregion-out bias      (was Fig 7)
+#   Fig 7  22 ROIs: field mean vs map mean, final map and out-of-fold        (was Fig 8)
+#   Fig 8  Temporal: AGC CV map, GSE similarity between years, AGC by year at
+#          the sample pixels of the zoom windows                             (was Fig 9)
 # Supplement (was -> now)
 #   S1 PA threshold by year (S6); S2 extent components and mask diagnostic (S2);
 #   S3 error by AGC bin, shrinkage of group means, cover error by bin (S4 + new c);
 #   S4 extent under the geomorphic mask options vs the KKP 2025 area (S7);
 #   S5 annual AGC maps (S1); S6 cover class confusion (S5);
-#   S7 cumulative extent by distance to AGC samples (S8);
-#   S8 cover classes (Tier 2 strata) in the zoom windows (S3)
+#   S7 expected performance: extent by distance to AGC samples (main Fig 5 until 10 Nov 2026);
+#   S8 cumulative extent by distance to AGC samples (S7 until 10 Nov 2026);
+#   S9 cover classes (Tier 2 strata) in the zoom windows (S8 until 10 Nov 2026)
 #
 # Reads (out_dir): P4_samples.csv, P4_metrics_summary.csv,
 #   P4_national_three_methods.csv, P4_ecoregion_summary.csv,
@@ -51,14 +56,14 @@
 #   P4_grid500m_cv.csv, P4_grid500m_agc_YYYY.csv,
 #   P4_zoom_<site>_layers.tif, _s2rgb.tif, _agc_annual.tif, _maskdiag.tif
 # Writes (FIG$dir = <out_dir>/P4_figures_v2): P4_Fig3_window_stats.csv,
-#   P4_Fig9c_window_years.csv, P4_Fig9c_window_summary.csv; figures only when
+#   P4_Fig8c_window_years.csv, P4_Fig8c_window_summary.csv; figures only when
 #   the ggsave lines are uncommented.
 # A missing input only skips the figures that need it.
 # All figures are printed; ggsave lines are commented (sizes in mm for RSE:
 # single column 90 mm, double column 190 mm). Each figure has a PNG line for
 # preview and an RSE submission line (Guide for Authors, checked 9 Nov 2026):
-# maps as LZW TIFF at 600 dpi (Fig 2, 3, 5, 9, S2, S5, S8), charts as vector
-# PDF through cairo_pdf (Fig 4, 6, 7, 8, S1, S3, S4, S6, S7).
+# maps as LZW TIFF at 600 dpi (Fig 2, 3, 8, S2, S5, S7, S9), charts as vector
+# PDF through cairo_pdf (Fig 4, 5, 6, 7, S1, S3, S4, S6, S8).
 #
 # Expected warnings (harmless; the figures are correct):
 #   "Raster pixels are placed at uneven horizontal intervals" - zoom windows:
@@ -70,7 +75,7 @@
 
 # setwd("path/to/seagrass-agc-countrywide-indonesia/R")   # folder that holds these scripts
 source("P4_00_config_functions.R")
-cat("P4_08_figures.R | version 2026-11-10 (Fig 1 workflow, Fig 2 study area)\n")
+cat("P4_08_figures.R | version 2026-11-10b (expected performance in S7; main Fig 1-8, S1-S9)\n")
 
 for (p in c("terra", "patchwork", "ggrepel", "maps")) {
   if (!requireNamespace(p, quietly = TRUE)) stop(sprintf("Package '%s' is needed: install.packages('%s')", p, p))
@@ -366,48 +371,9 @@ if (!is.null(ms)) {
 }
 
 # =============================================================================
-# FIGURE 5: expected performance (distance to AGC samples)
+# FIGURE 5: national totals by method + survey composition
 # =============================================================================
-fig("Figure 5: expected performance")
-if (need(grid_file("dist"))) {
-  gd <- rd(grid_file("dist"))
-  dcols <- sprintf("area_d%02d", 0:10)
-  cells <- agg_cells(gd, FIG$nat_cell, dcols)
-  by_des <- sapply(DESIGN_LEVELS, function(d) rowSums(as.matrix(cells[, dcols[DIST_DESIGN == d]])))
-  cells$design <- factor(DESIGN_LEVELS[max.col(by_des, ties.method = "first")], levels = DESIGN_LEVELS)
-  share <- 100 * colSums(by_des) / sum(by_des)
-  labs_des <- setNames(sprintf("%s; %s of extent", design_lab_mec(DESIGN_LEVELS), pct_lab(share)), DESIGN_LEVELS)
-  p5a <- ggplot() + land() +
-    geom_tile(data = cells, aes(gx, gy, fill = design), width = FIG$nat_cell, height = FIG$nat_cell) +
-    geom_rect(data = win_box, aes(xmin = xmin - 0.25, xmax = xmax + 0.25, ymin = ymin - 0.25, ymax = ymax + 0.25),
-              fill = NA, colour = "black", linewidth = 0.4) +
-    geom_text(data = win_box, aes(x = xmax + 0.45, y = ymax + 0.35, label = tag), size = 3, fontface = "bold") +
-    scale_fill_manual(values = DESIGN_COL, labels = labs_des, drop = FALSE,
-                      name = "Distance to nearest AGC sample (validation design): pixel-based MEC; share of extent") +
-    guides(fill = guide_legend(ncol = 2, title.position = "top")) +
-    nat_coord() + scalebar(96, -10.8, 500, 0.15) +
-    labs(title = sprintf("a  Expected performance: validation design of the largest share of extent per %.1f\u00b0 cell", FIG$nat_cell)) +
-    theme_map() + theme(legend.position = "bottom")
-  zp5 <- if (nrow(win) > 0) purrr::map(seq_len(nrow(win)), function(i) {
-    st <- win$stem[i]
-    d <- rast_df(zoom_file(st, "layers"), "dist_class") |>
-      dplyr::mutate(design = factor(DIST_DESIGN[value + 1], levels = DESIGN_LEVELS))
-    ggplot() + s2_layer(st) +
-      geom_raster(data = d, aes(x, y, fill = design)) +
-      scale_fill_manual(values = DESIGN_COL, guide = "none", drop = FALSE) +
-      zoom_coord(st) + zoom_bar(st) +
-      labs(title = sprintf("%s  %s", win$tag[i], win$label[i])) + zoom_theme()
-  }) else list()
-  fig5 <- p5a / wrap_plots(zp5, nrow = 1) + plot_layout(heights = c(1.6, 1))
-  print(fig5)
-  # ggsave(fig_out("P4_Fig5_expected_performance.png"), fig5, width = 190, height = 165, units = "mm", dpi = 400)
-  # ggsave(fig_out("P4_Fig5_expected_performance.tif"), fig5, width = 190, height = 165, units = "mm", dpi = 600, device = "tiff", compression = "lzw")   # RSE submission (map, 600 dpi)
-}
-
-# =============================================================================
-# FIGURE 6: national totals by method + survey composition
-# =============================================================================
-fig("Figure 6: national totals")
+fig("Figure 5: national totals")
 if (need(ofile("P4_national_three_methods.csv"))) {
   n3 <- rd(ofile("P4_national_three_methods.csv"))
   line_m <- n3 |> dplyr::filter(method != "Tier 1 (survey-year mean)")
@@ -435,16 +401,16 @@ if (need(ofile("P4_national_three_methods.csv"))) {
     scale_fill_manual(values = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e", "#e6ab02", "grey70"), name = NULL) +
     labs(title = "b  AGC field samples by survey year and ecoregion", x = NULL, y = "Samples") +
     theme_p4() + theme(legend.position = "right")
-  fig6 <- p6a / p6b + plot_layout(heights = c(1.4, 1))
-  print(fig6)
-  # ggsave(fig_out("P4_Fig6_national_totals.png"), fig6, width = 190, height = 150, units = "mm", dpi = 400)
-  # ggsave(fig_out("P4_Fig6_national_totals.pdf"), fig6, width = 190, height = 150, units = "mm", device = cairo_pdf)   # RSE submission (vector)
+  fig5 <- p6a / p6b + plot_layout(heights = c(1.4, 1))
+  print(fig5)
+  # ggsave(fig_out("P4_Fig5_national_totals.png"), fig5, width = 190, height = 150, units = "mm", dpi = 400)
+  # ggsave(fig_out("P4_Fig5_national_totals.pdf"), fig5, width = 190, height = 150, units = "mm", device = cairo_pdf)   # RSE submission (vector)
 }
 
 # =============================================================================
-# FIGURE 7: ecoregions
+# FIGURE 6: ecoregions
 # =============================================================================
-fig("Figure 7: ecoregions")
+fig("Figure 6: ecoregions")
 if (need(ofile("P4_ecoregion_summary.csv"), ofile("P4_lolo_region_means.csv"))) {
   es <- rd(ofile("P4_ecoregion_summary.csv")) |> dplyr::filter(eco_id > 0)
   es <- es |> dplyr::mutate(eco_lab = sprintf("%s (%.0f %s, n = %d)", ecoregion, area_km2, KM2, n_agc))
@@ -480,19 +446,19 @@ if (need(ofile("P4_ecoregion_summary.csv"), ofile("P4_lolo_region_means.csv"))) 
     labs(title = "b  Leave-one-ecoregion-out bias of the regional mean",
          x = "Predicted minus field mean (% of field mean)", y = NULL) +
     theme_p4() + theme(legend.position = "bottom", plot.title.position = "plot")
-  fig7 <- p7a / p7b + plot_layout(heights = c(1.2, 1)) +
+  fig6 <- p7a / p7b + plot_layout(heights = c(1.2, 1)) +
     plot_annotation(caption = paste("a: ecoregion field mean (Tier 1) only where n >= 30, with 95 % CI; n = AGC field samples.",
                                     "b: ecoregions ordered by field mean AGC; pseudo-log x axis."),
                     theme = theme(plot.caption = element_text(size = FIG$base_size - 2)))
-  print(fig7)
-  # ggsave(fig_out("P4_Fig7_ecoregions.png"), fig7, width = 190, height = 180, units = "mm", dpi = 400)
-  # ggsave(fig_out("P4_Fig7_ecoregions.pdf"), fig7, width = 190, height = 180, units = "mm", device = cairo_pdf)   # RSE submission (vector)
+  print(fig6)
+  # ggsave(fig_out("P4_Fig6_ecoregions.png"), fig6, width = 190, height = 180, units = "mm", dpi = 400)
+  # ggsave(fig_out("P4_Fig6_ecoregions.pdf"), fig6, width = 190, height = 180, units = "mm", device = cairo_pdf)   # RSE submission (vector)
 }
 
 # =============================================================================
-# FIGURE 8: 22 ROIs, field vs map mean (in-sample and out-of-fold)
+# FIGURE 7: 22 ROIs, field vs map mean (in-sample and out-of-fold)
 # =============================================================================
-fig("Figure 8: ROIs")
+fig("Figure 7: ROIs")
 if (need(ofile("P4_roi_comparison.csv"), ofile("P4_shrinkage_roi.csv"))) {
   r_in  <- rd(ofile("P4_roi_comparison.csv")) |> dplyr::filter(loc_id %in% FIG$roi22) |>
     dplyr::transmute(loc_id, n = n_year, field = field_mean_gC_m2, map = px_mean_gC_m2,
@@ -508,7 +474,7 @@ if (need(ofile("P4_roi_comparison.csv"), ofile("P4_shrinkage_roi.csv"))) {
                      rmse = sqrt(mean((field - map)^2)), k = dplyr::n(), .groups = "drop") |>
     dplyr::mutate(txt = sprintf("n >= 10 (%d ROIs): slope %.2f, R\u00b2 %.2f, MEC %.2f, RMSE %.1f", k, slope, r2, mec, rmse))
   lim <- c(0, max(c(r7$field, r7$map), na.rm = TRUE) * 1.05)
-  fig8 <- ggplot(r7, aes(field, map)) +
+  fig7 <- ggplot(r7, aes(field, map)) +
     geom_abline(slope = 1, intercept = 0, linetype = 2, colour = "grey40") +
     geom_hline(yintercept = nat_mean, linetype = 3, colour = "firebrick") +
     geom_smooth(data = dplyr::filter(r7, n >= 10), method = "lm", formula = y ~ x, se = FALSE,
@@ -525,15 +491,15 @@ if (need(ofile("P4_roi_comparison.csv"), ofile("P4_shrinkage_roi.csv"))) {
     labs(x = expression("Field mean AGC (gC m"^-2*")"), y = expression("Map mean AGC (gC m"^-2*")"),
          caption = "Dashed: 1:1. Dotted: national field mean (Tier 1 factor).") +
     theme_p4() + theme(legend.position = "right")
-  print(fig8)
-  # ggsave(fig_out("P4_Fig8_roi.png"), fig8, width = 190, height = 95, units = "mm", dpi = 400)
-  # ggsave(fig_out("P4_Fig8_roi.pdf"), fig8, width = 190, height = 95, units = "mm", device = cairo_pdf)   # RSE submission (vector)
+  print(fig7)
+  # ggsave(fig_out("P4_Fig7_roi.png"), fig7, width = 190, height = 95, units = "mm", dpi = 400)
+  # ggsave(fig_out("P4_Fig7_roi.pdf"), fig7, width = 190, height = 95, units = "mm", device = cairo_pdf)   # RSE submission (vector)
 }
 
 # =============================================================================
-# FIGURE 9: temporal behaviour
+# FIGURE 8: temporal behaviour
 # =============================================================================
-fig("Figure 9: temporal")
+fig("Figure 8: temporal")
 p9 <- list()
 if (need(grid_file("cv"))) {
   gc <- rd(grid_file("cv"))
@@ -592,10 +558,10 @@ if (nrow(ann) > 0) {
   })
   if (nrow(wsum) > 0) {
     print(as.data.frame(wsum), row.names = FALSE, digits = 4)
-    readr::write_csv(wsum, fig_out("P4_Fig9c_window_summary.csv"))
+    readr::write_csv(wsum, fig_out("P4_Fig8c_window_summary.csv"))
   }
   if (nrow(yr9) > 0) {
-    readr::write_csv(yr9 |> dplyr::mutate(cohort = as.character(cohort)), fig_out("P4_Fig9c_window_years.csv"))
+    readr::write_csv(yr9 |> dplyr::mutate(cohort = as.character(cohort)), fig_out("P4_Fig8c_window_years.csv"))
     # cohorts in year order; the sample count of each cohort goes into the panel strip
     yr9 <- yr9 |> dplyr::mutate(cohort = factor(as.character(cohort), levels = sort(unique(as.character(cohort)))))
     lab9 <- yr9 |> dplyr::distinct(label, cohort, n) |> dplyr::arrange(label, cohort) |> dplyr::group_by(label) |>
@@ -618,11 +584,11 @@ if (nrow(ann) > 0) {
   }
 }
 if (length(p9) > 0) {
-  fig9 <- if (all(c("a", "b", "c") %in% names(p9))) (p9$a + p9$b + plot_layout(widths = c(2.6, 1))) / p9$c +
+  fig8 <- if (all(c("a", "b", "c") %in% names(p9))) (p9$a + p9$b + plot_layout(widths = c(2.6, 1))) / p9$c +
     plot_layout(heights = c(0.85, 1)) else wrap_plots(p9, ncol = 1)
-  print(fig9)
-  # ggsave(fig_out("P4_Fig9_temporal.png"), fig9, width = 190, height = 140, units = "mm", dpi = 400)
-  # ggsave(fig_out("P4_Fig9_temporal.tif"), fig9, width = 190, height = 140, units = "mm", dpi = 600, device = "tiff", compression = "lzw")   # RSE submission (map, 600 dpi)
+  print(fig8)
+  # ggsave(fig_out("P4_Fig8_temporal.png"), fig8, width = 190, height = 140, units = "mm", dpi = 400)
+  # ggsave(fig_out("P4_Fig8_temporal.tif"), fig8, width = 190, height = 140, units = "mm", dpi = 600, device = "tiff", compression = "lzw")   # RSE submission (map, 600 dpi)
 }
 
 # =============================================================================
@@ -825,27 +791,66 @@ if (need(ofile("P4_cover_confusion.csv"))) {
 }
 
 # =============================================================================
-# SUPPLEMENT S7: cumulative extent by distance to AGC samples
+# SUPPLEMENT S7: expected performance (distance to AGC samples; was Fig 5)
 # =============================================================================
-fig("Figure S7: cumulative extent by distance")
+fig("Figure S7: expected performance")
+if (need(grid_file("dist"))) {
+  gd <- rd(grid_file("dist"))
+  dcols <- sprintf("area_d%02d", 0:10)
+  cells <- agg_cells(gd, FIG$nat_cell, dcols)
+  by_des <- sapply(DESIGN_LEVELS, function(d) rowSums(as.matrix(cells[, dcols[DIST_DESIGN == d]])))
+  cells$design <- factor(DESIGN_LEVELS[max.col(by_des, ties.method = "first")], levels = DESIGN_LEVELS)
+  share <- 100 * colSums(by_des) / sum(by_des)
+  labs_des <- setNames(sprintf("%s; %s of extent", design_lab_mec(DESIGN_LEVELS), pct_lab(share)), DESIGN_LEVELS)
+  p5a <- ggplot() + land() +
+    geom_tile(data = cells, aes(gx, gy, fill = design), width = FIG$nat_cell, height = FIG$nat_cell) +
+    geom_rect(data = win_box, aes(xmin = xmin - 0.25, xmax = xmax + 0.25, ymin = ymin - 0.25, ymax = ymax + 0.25),
+              fill = NA, colour = "black", linewidth = 0.4) +
+    geom_text(data = win_box, aes(x = xmax + 0.45, y = ymax + 0.35, label = tag), size = 3, fontface = "bold") +
+    scale_fill_manual(values = DESIGN_COL, labels = labs_des, drop = FALSE,
+                      name = "Distance to nearest AGC sample (validation design): pixel-based MEC; share of extent") +
+    guides(fill = guide_legend(ncol = 2, title.position = "top")) +
+    nat_coord() + scalebar(96, -10.8, 500, 0.15) +
+    labs(title = sprintf("a  Expected performance: validation design of the largest share of extent per %.1f\u00b0 cell", FIG$nat_cell)) +
+    theme_map() + theme(legend.position = "bottom")
+  zp5 <- if (nrow(win) > 0) purrr::map(seq_len(nrow(win)), function(i) {
+    st <- win$stem[i]
+    d <- rast_df(zoom_file(st, "layers"), "dist_class") |>
+      dplyr::mutate(design = factor(DIST_DESIGN[value + 1], levels = DESIGN_LEVELS))
+    ggplot() + s2_layer(st) +
+      geom_raster(data = d, aes(x, y, fill = design)) +
+      scale_fill_manual(values = DESIGN_COL, guide = "none", drop = FALSE) +
+      zoom_coord(st) + zoom_bar(st) +
+      labs(title = sprintf("%s  %s", win$tag[i], win$label[i])) + zoom_theme()
+  }) else list()
+  figS7 <- p5a / wrap_plots(zp5, nrow = 1) + plot_layout(heights = c(1.6, 1))
+  print(figS7)
+  # ggsave(fig_out("P4_FigS7_expected_performance.png"), figS7, width = 190, height = 165, units = "mm", dpi = 400)
+  # ggsave(fig_out("P4_FigS7_expected_performance.tif"), figS7, width = 190, height = 165, units = "mm", dpi = 600, device = "tiff", compression = "lzw")   # RSE submission (map, 600 dpi)
+}
+
+# =============================================================================
+# SUPPLEMENT S8: cumulative extent by distance to AGC samples (was S7)
+# =============================================================================
+fig("Figure S8: cumulative extent by distance")
 if (need(ofile("P4_distance_coverage_class.csv"))) {
   dc <- rd(ofile("P4_distance_coverage_class.csv")) |>
     dplyr::mutate(dist_label = factor(dist_label, levels = dist_label), design = factor(design, levels = DESIGN_LEVELS))
-  figS7 <- ggplot(dc, aes(dist_label, area_cum_pct, group = 1)) +
+  figS8 <- ggplot(dc, aes(dist_label, area_cum_pct, group = 1)) +
     geom_col(aes(y = area_pct, fill = design), width = 0.7) + geom_line() + geom_point(size = 1) +
     scale_fill_manual(values = DESIGN_COL, labels = DESIGN_LABEL, name = "Validation design") +
     labs(x = "Distance to the nearest AGC sample", y = "Share of extent (%)",
          caption = "Bars: share per distance class; line: cumulative share") +
     theme_p4() + theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "right")
-  print(figS7)
-  # ggsave(fig_out("P4_FigS7_distance_cumulative.png"), figS7, width = 160, height = 80, units = "mm", dpi = 400)
-  # ggsave(fig_out("P4_FigS7_distance_cumulative.pdf"), figS7, width = 160, height = 80, units = "mm", device = cairo_pdf)   # RSE submission (vector)
+  print(figS8)
+  # ggsave(fig_out("P4_FigS8_distance_cumulative.png"), figS8, width = 160, height = 80, units = "mm", dpi = 400)
+  # ggsave(fig_out("P4_FigS8_distance_cumulative.pdf"), figS8, width = 160, height = 80, units = "mm", device = cairo_pdf)   # RSE submission (vector)
 }
 
 # =============================================================================
-# SUPPLEMENT S8: cover classes (Tier 2 strata) in the zoom windows
+# SUPPLEMENT S9: cover classes (Tier 2 strata) in the zoom windows (was S8)
 # =============================================================================
-fig("Figure S8: cover classes in the zoom windows")
+fig("Figure S9: cover classes in the zoom windows")
 if (nrow(win) > 0) {
   zp8 <- purrr::map(seq_len(nrow(win)), function(i) {
     st <- win$stem[i]
@@ -856,10 +861,10 @@ if (nrow(win) > 0) {
                         drop = FALSE, name = "Mapped cover (%)") +
       zoom_coord(st) + zoom_bar(st) + labs(title = sprintf("%s  %s", letters[i], win$label[i])) + zoom_theme()
   })
-  figS8 <- wrap_plots(zp8, nrow = 1, guides = "collect") & theme(legend.position = "bottom")
-  print(figS8)
-  # ggsave(fig_out("P4_FigS8_cover_classes.png"), figS8, width = 190, height = 70, units = "mm", dpi = 400)
-  # ggsave(fig_out("P4_FigS8_cover_classes.tif"), figS8, width = 190, height = 70, units = "mm", dpi = 600, device = "tiff", compression = "lzw")   # RSE submission (map, 600 dpi)
+  figS9 <- wrap_plots(zp8, nrow = 1, guides = "collect") & theme(legend.position = "bottom")
+  print(figS9)
+  # ggsave(fig_out("P4_FigS9_cover_classes.png"), figS9, width = 190, height = 70, units = "mm", dpi = 400)
+  # ggsave(fig_out("P4_FigS9_cover_classes.tif"), figS9, width = 190, height = 70, units = "mm", dpi = 600, device = "tiff", compression = "lzw")   # RSE submission (map, 600 dpi)
 }
 
 cat("\nP4_08_figures.R COMPLETE\n")
