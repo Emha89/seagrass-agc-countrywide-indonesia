@@ -1,10 +1,10 @@
-# Seagrass above-ground carbon across Indonesia: pixel-based and area-based estimates
+# What pixel-based maps add to area-based estimates of seagrass above-ground carbon across Indonesia
 
 R and Google Earth Engine (GEE) scripts for:
 
 Hafizt, M., McMahon, K., Roelfsema, C., Hernawan, U.E., Adi, N.S., Lyons, M.,
-Phinn, S. (in preparation). **Pixel-based and area-based estimates of seagrass
-above-ground carbon across Indonesia tested on the same held-out samples.**
+Phinn, S. (in preparation). **What pixel-based maps add to area-based estimates
+of seagrass above-ground carbon: a national test across Indonesia.**
 
 The scripts map seagrass above-ground carbon (AGC, gC m⁻²) and percent cover at
 10 m across Indonesia for 2017–2024 with random forest models on Google
