@@ -15,9 +15,13 @@
 # Update 9 Nov 2026b: RSE submission ggsave lines added under each PNG line
 # (TIFF 600 dpi for maps, vector PDF for charts). Figures are unchanged.
 #
+# Update 10 Nov 2026: the Introduction no longer cites a figure, so the
+# workflow (first cited in Methods) is Fig 1 and the study area is Fig 2.
+# Only the label and file name of the study area figure changed.
+#
 # Main figures
-#   Fig 1  Study area: ecoregions, extent, AGC samples; extent share vs sample share
-#   Fig 2  Workflow diagram (drawn in the manuscript, not by this script)
+#   Fig 1  Workflow diagram (drawn separately, not by this script)
+#   Fig 2  Study area: ecoregions, extent, AGC samples; extent share vs sample share (was Fig 1)
 #   Fig 3  Mean AGC 2017-2024: national grid + four 10 m zoom windows       (was Fig 2)
 #   Fig 4  RMSE, R2 and MEC against distance to the nearest training sample (was Fig 3)
 #   Fig 5  Expected performance: extent by distance to AGC samples          (was Fig 4)
@@ -53,7 +57,7 @@
 # All figures are printed; ggsave lines are commented (sizes in mm for RSE:
 # single column 90 mm, double column 190 mm). Each figure has a PNG line for
 # preview and an RSE submission line (Guide for Authors, checked 9 Nov 2026):
-# maps as LZW TIFF at 600 dpi (Fig 1, 3, 5, 9, S2, S5, S8), charts as vector
+# maps as LZW TIFF at 600 dpi (Fig 2, 3, 5, 9, S2, S5, S8), charts as vector
 # PDF through cairo_pdf (Fig 4, 6, 7, 8, S1, S3, S4, S6, S7).
 #
 # Expected warnings (harmless; the figures are correct):
@@ -66,7 +70,7 @@
 
 # setwd("path/to/seagrass-agc-countrywide-indonesia/R")   # folder that holds these scripts
 source("P4_00_config_functions.R")
-cat("P4_08_figures.R | version 2026-11-09b (RSE file formats)\n")
+cat("P4_08_figures.R | version 2026-11-10 (Fig 1 workflow, Fig 2 study area)\n")
 
 for (p in c("terra", "patchwork", "ggrepel", "maps")) {
   if (!requireNamespace(p, quietly = TRUE)) stop(sprintf("Package '%s' is needed: install.packages('%s')", p, p))
@@ -81,7 +85,7 @@ FIG <- list(
   gee_dir    = if (!is.null(CFG$gee_dir)) CFG$gee_dir else out_file("gee"),
   grid_m     = 500,                    # cell size of the P4_G08 grid exports
   nat_cell   = 0.1,                    # degrees, national map cells (Fig 3, 5, 9, S2)
-  ext_cell   = 0.25,                   # degrees, extent cells in Fig 1 and annual maps in S5
+  ext_cell   = 0.25,                   # degrees, extent cells in Fig 2 and annual maps in S5
   nat_xlim   = c(94.5, 141.5),
   nat_ylim   = c(-11.5, 6.5),
   years      = 2017:2024,
@@ -231,9 +235,9 @@ design_lab_mec <- function(d) if (is.null(mec_px)) DESIGN_LABEL[d] else
   sprintf("%s: MEC %.2f", DESIGN_LABEL[d], mec_px[d])
 
 # =============================================================================
-# FIGURE 1: study area
+# FIGURE 2: study area
 # =============================================================================
-fig("Figure 1: study area")
+fig("Figure 2: study area")
 meow_shp <- ofile("gee_upload/P4_meow_indo.shp")
 if (need(grid_file("agcmean"), meow_shp, ofile("P4_ecoregion_summary.csv"))) {
   sf::sf_use_s2(FALSE)
@@ -268,10 +272,10 @@ if (need(grid_file("agcmean"), meow_shp, ofile("P4_ecoregion_summary.csv"))) {
     scale_fill_manual(values = c("Extent area" = "#2171b5", "AGC samples" = "#d95f02"), name = NULL) +
     labs(title = "b  Share of extent area and of AGC samples", x = NULL, y = "Share (%)") +
     theme_p4() + theme(legend.position = "bottom")
-  fig1 <- p1a / p1b + plot_layout(heights = c(1, 1))
-  print(fig1)
-  # ggsave(fig_out("P4_Fig1_study_area.png"), fig1, width = 190, height = 160, units = "mm", dpi = 400)
-  # ggsave(fig_out("P4_Fig1_study_area.tif"), fig1, width = 190, height = 160, units = "mm", dpi = 600, device = "tiff", compression = "lzw")   # RSE submission (map, 600 dpi)
+  fig2 <- p1a / p1b + plot_layout(heights = c(1, 1))
+  print(fig2)
+  # ggsave(fig_out("P4_Fig2_study_area.png"), fig2, width = 190, height = 160, units = "mm", dpi = 400)
+  # ggsave(fig_out("P4_Fig2_study_area.tif"), fig2, width = 190, height = 160, units = "mm", dpi = 600, device = "tiff", compression = "lzw")   # RSE submission (map, 600 dpi)
 }
 
 # =============================================================================
