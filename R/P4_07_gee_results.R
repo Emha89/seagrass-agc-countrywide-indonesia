@@ -1,31 +1,35 @@
 # =============================================================================
 # P4_07_gee_results.R
-# Paper 4 revised design: joins the GEE exports (P4_G01-G04) with the R
-# validation results into the estimation tables (national, ecoregion, ROI) and
-# the coverage and temporal checks.
+# Paper 4, design v3: joins the GEE exports (P4_G01-G07) with the R validation
+# results into the national and ecoregion estimation tables, the coverage and the
+# temporal checks.
 #
-# Copy the CSV/GeoJSON files from the Drive folder P4v2_GEE into
-# <out_dir>/gee (or set CFG$gee_dir). A missing GEE file only skips its step,
-# so the script can be run as the exports arrive.
+# Copy the CSV files from the Drive folder P4v2_GEE into CFG$gee_dir (data/gee).
+# A missing GEE file only skips its step, so the script can be run as the exports
+# arrive. The GSE map is that of P4v2 (the GSE model and samples are unchanged).
 #
-# Reads (GEE): P4_gee_totals_YYYY.csv, P4_gee_points_fitted.csv,
-#   P4_gee_roi_totals.csv, P4_roi_polygons.geojson, P4_gee_samples_extent.csv,
+# Reads (GEE): P4_gee_totals_YYYY.csv, P4_gee_points_fitted.csv, P4_gee_samples_extent.csv,
 #   P4_gee_pa_points.csv, P4_gee_distance_area.csv, P4_gee_distance_pct.csv,
 #   P4_gee_cv_summary.csv, P4_gee_gse_similarity_eco.csv,
-#   P4_gee_gse_sim_sample.csv, P4_gee_gse_sim_points.csv, P4_gee_importance.csv
+#   P4_gee_gse_sim_sample.csv, P4_gee_gse_sim_points.csv, P4_gee_importance.csv,
+#   P4_gee_extent_sensitivity*.csv, and the *_addon*.csv files of P4_G07
 # Reads (R): P4_samples.csv, gee_upload/P4_gee_training.csv, P4_meow_lookup.csv,
-#   P4_uncertainty_params.csv, P4_metrics_summary.csv, P4_tier2_class_means.csv
+#   P4_uncertainty_params.csv, P4_metrics_summary.csv, P4_lolo_region_means.csv,
+#   P4_tier1_agc_bounds.csv
 # Writes:
 #   STEP 1  P4_pixel_national.csv              pixel-based totals 2017-2024, CI from
 #                                              the cluster-robust SE of the mean residual
 #           P4_pixel_ci_sensitivity.csv        same totals with the 09b-style CI
-#           gee_cover_class_area_by_year.csv   class areas (input of P4_05 STEP 7)
+#           P4_ecoregion_area.csv              extent area per ecoregion
 #   STEP 2  P4_tier1_national_gee.csv          Tier 1 with the GEE extent area
-#   STEP 3  P4_tier2_class_means_map.csv       class means, classes from the GEE cover map
-#           P4_tier2_loyo_map.csv, P4_tier2_national_map.csv
+#           P4_tier1_agc_bounds_gee.csv        pooled Tier 1 from AGC_low and AGC_up
+#   STEP 3  P4_tier2_national.csv              Tier 2 (ecoregion strata), stratified CI and
+#                                              leave-one-survey-year-out range
+#           P4_tier2_by_ecoregion.csv
 #   STEP 4  P4_national_three_methods.csv
 #   STEP 5  P4_ecoregion_by_year.csv, P4_ecoregion_summary.csv
-#   STEP 6  P4_roi_comparison.csv
+#   STEP 6  P4_lolo_area_weighted_bias.csv     area-weighted bias of the held-out
+#                                              ecoregion means (needs P4_04)
 #   STEP 7  P4_samples_in_extent.csv
 #   STEP 8  P4_pa_threshold_by_year.csv
 #   STEP 9  P4_distance_coverage_class.csv, P4_distance_coverage_design.csv,
@@ -34,13 +38,13 @@
 #   STEP 11 P4_gse_similarity_eco.csv (optional GEE task), P4_gse_similarity_eco_sample.csv,
 #           P4_gse_similarity_pairs.csv,
 #           P4_gse_similarity_points_lag.csv
+#   STEP 12 P4_extent_sensitivity_national.csv, P4_extent_sensitivity_ecoregion.csv
 # Add-on (2 Nov 2026): when the P4_G07 files (*_addon*.csv) are in gee_dir, the
 # core sums of P4_G02/G03/G04 and the add-on sums are added (see "Core + add-on").
-# Units: gC m-2 x km2 = t C. All plots are printed; ggsave lines are commented.
+# Units: gC m-2 x km2 = t C. Plots are printed and saved as P4_fig_*.png.
 # =============================================================================
 
-# setwd("path/to/seagrass-agc-countrywide-indonesia/R")   # folder that holds these scripts
-source("P4_00_config_functions.R")
+source("R/P4_00_config_functions.R")
 
 gee_dir   <- if (!is.null(CFG$gee_dir)) CFG$gee_dir else out_file("gee")
 NA_CODE   <- -9999
@@ -153,14 +157,12 @@ if (length(tot_files) == 0) {
       stop("Add-on totals do not cover the same years as the core totals: copy all P4_gee_totals_addon_YYYY.")
     tot_raw <- dplyr::bind_rows(tot_raw, purrr::map_dfr(add_files, readr::read_csv, show_col_types = FALSE))
   }
+  # the P4v2 totals are also split by mapped cover class; v3 does not use the classes
   tot <- tot_raw |>
-    dplyr::mutate(eco_id = as.integer(round(eco_id)), cover_class = as.integer(round(cover_class))) |>
-    dplyr::group_by(year, eco_id, cover_class) |>
+    dplyr::mutate(eco_id = as.integer(round(eco_id))) |>
+    dplyr::group_by(year, eco_id) |>
     dplyr::summarise(area_m2 = sum(area_m2), agc_g = sum(agc_g), n_px = sum(n_px), .groups = "drop") |>
-    dplyr::mutate(year = as.integer(year), eco_id = as.integer(round(eco_id)),
-                  cover_class = as.integer(round(cover_class)),
-                  class = factor(CFG$cover_labels[cover_class], levels = CFG$cover_labels),
-                  ecoregion = eco_name(eco_id))
+    dplyr::mutate(year = as.integer(year), ecoregion = eco_name(eco_id))
   miss_y <- setdiff(YEARS_MAP, unique(tot$year))
   if (length(miss_y) > 0) cat("  NOTE: years without a totals file:", paste(miss_y, collapse = ", "), "\n")
 
@@ -195,14 +197,12 @@ if (length(tot_files) == 0) {
                        sqrt(upar[["N_eff"]]))
   readr::write_csv(ci_sens, out_file("P4_pixel_ci_sensitivity.csv"))
 
-  cls_area <- tot |>
-    dplyr::group_by(year, class, .drop = FALSE) |>
-    dplyr::summarise(area_km2 = sum(area_m2) / 1e6, .groups = "drop") |>
-    dplyr::mutate(class = as.character(class))
-  readr::write_csv(cls_area, out_file("gee_cover_class_area_by_year.csv"))
-  cat("Cover class areas (km2):\n")
-  print(as.data.frame(tidyr::pivot_wider(cls_area, names_from = class, values_from = area_km2)),
-        row.names = FALSE)
+  # extent area per ecoregion (fixed extent: the same in every map year)
+  eco_area <- tot |>
+    dplyr::group_by(eco_id, ecoregion) |>
+    dplyr::summarise(area_km2 = sum(area_m2) / 1e6 / dplyr::n_distinct(year), .groups = "drop") |>
+    dplyr::arrange(dplyr::desc(area_km2))
+  readr::write_csv(eco_area, out_file("P4_ecoregion_area.csv"))
 }
 
 # =============================================================================
@@ -219,86 +219,59 @@ if (!is.null(tot)) {
   )
   print_tbl(tier1, 1)
   readr::write_csv(tier1, out_file("P4_tier1_national_gee.csv"))
+
+  bnd <- purrr::map_dfr(c("AGC_pred", "AGC_low", "AGC_up"), function(v)
+    tier1_summary(agc[[v]], DEFF, AREA_KM2) |> dplyr::mutate(response = v, .before = 1)) |>
+    dplyr::mutate(total_kt = total_tC / 1e3,
+                  diff_from_AGC_pred_kt = (total_tC - total_tC[response == "AGC_pred"]) / 1e3)
+  cat("Pooled Tier 1 from AGC_pred and its 95% bounds (kt C):\n")
+  print_tbl(bnd |> dplyr::select(response, mean_gC_m2, total_kt, diff_from_AGC_pred_kt), 2)
+  readr::write_csv(bnd, out_file("P4_tier1_agc_bounds_gee.csv"))
 }
 
 # =============================================================================
-# STEP 3: Tier 2 with classes from the GEE cover map
-# (class at each AGC sample = map class at that pixel, as in stratified estimation)
+# STEP 3: Tier 2, ecoregion strata x extent area per ecoregion
+# stratum mean where the ecoregion has >= CFG$min_n_eco AGC samples, otherwise the
+# national mean; stratified CI with n_eff = n / DEFF; range when one survey year
+# is left out (survey year and region are confounded in this dataset)
 # =============================================================================
-step("STEP 3: Tier 2 (classes from the GEE cover map)")
-class_means <- function(d) {
-  d |>
-    dplyr::group_by(cov_class, .drop = FALSE) |>
-    dplyr::summarise(n = dplyr::n(), mean_gC_m2 = mean(AGC_pred), sd_gC_m2 = sd(AGC_pred),
-                     .groups = "drop") |>
-    dplyr::mutate(n_eff = n / DEFF)
-}
-tier2_total <- function(areas, cm, overall_mean) {
-  d <- dplyr::left_join(areas, cm, by = c("class" = "cov_class"))
-  empty <- is.na(d$mean_gC_m2) | d$n == 0
-  d$mean_gC_m2[empty] <- overall_mean
-  d$var_term <- ifelse(empty | d$n_eff < 2, NA_real_, d$area_km2^2 * d$sd_gC_m2^2 / d$n_eff)
-  tibble::tibble(total_tC = sum(d$mean_gC_m2 * d$area_km2),
-                 ci_half_tC = 1.96 * sqrt(sum(d$var_term, na.rm = TRUE)),
-                 classes_without_samples = paste(d$class[empty], collapse = ", "))
+step("STEP 3: Tier 2 (ecoregion strata)")
+t2 <- NULL; t2_eco <- NULL
+if (!is.null(tot)) {
+  areas <- eco_area |> dplyr::select(ecoregion, area_km2)
+  t2_all <- tier2_total(areas, agc$AGC_pred, agc$ecoregion, DEFF)
+  t2_loyo <- purrr::map_dfr(sort(unique(agc$year)), function(y) {
+    k <- agc$year != y
+    tier2_total(areas, agc$AGC_pred[k], agc$ecoregion[k], DEFF)$total |>
+      dplyr::mutate(left_out_year = y, .before = 1)
+  })
+  cat("Tier 2 national total when one survey year is left out:\n")
+  print_tbl(t2_loyo |> dplyr::select(left_out_year, total_tC, n_strata), 0)
+  t2_one <- t2_all$total |>
+    dplyr::mutate(loyo_min_tC = min(t2_loyo$total_tC), loyo_max_tC = max(t2_loyo$total_tC),
+                  ci_low_tC = total_tC - ci_half_tC, ci_up_tC = total_tC + ci_half_tC)
+  t2 <- tidyr::crossing(year = sort(unique(tot$year)), t2_one)   # pooled strata, fixed extent
+  print_tbl(t2_one, 0)
+  readr::write_csv(t2, out_file("P4_tier2_national.csv"))
+  t2_eco <- t2_all$by_ecoregion |>
+    dplyr::rename(t2_total_tC = total_tC, t2_ci_half_tC = ci_half_tC)
+  print_tbl(t2_eco |> dplyr::select(ecoregion, area_km2, n, stratum, dens_gC_m2, t2_total_tC, t2_ci_half_tC), 1)
+  readr::write_csv(t2_eco, out_file("P4_tier2_by_ecoregion.csv"))
+  cat(sprintf("Tier 2 strata cover %.1f%% of the extent; the rest takes the national mean.\n",
+              t2_one$area_strata_pct))
 }
 
-t2 <- NULL; cm_map <- NULL; agc_map <- NULL
+# In-sample check of the GEE fit at the training points (sanity check only)
 if (has_gee("P4_gee_points_fitted.csv")) {
   fit <- read_gee("P4_gee_points_fitted.csv")
   check_rid(fit, "P4_gee_points_fitted.csv")
-  fit <- fit |> dplyr::select(rid, AGC_map, tSPC_map, cov_class_map)
-  agc_map <- agc |>
-    dplyr::left_join(fit, by = "rid") |>
-    dplyr::mutate(cov_class = factor(CFG$cover_labels[cov_class_map], levels = CFG$cover_labels))
-  n_miss <- sum(is.na(agc_map$cov_class_map))
-  if (n_miss > 0) cat(sprintf("  NOTE: %d AGC samples without a fitted value from GEE\n", n_miss))
-  agc_map <- agc_map |> dplyr::filter(!is.na(cov_class))
-
-  ins <- agc_map |> dplyr::summarise(n = dplyr::n(), r = cor(AGC_pred, AGC_map),
-                                     mean_obs = mean(AGC_pred), mean_fit = mean(AGC_map))
+  ins <- agc |>
+    dplyr::inner_join(fit |> dplyr::select(rid, AGC_map), by = "rid") |>
+    dplyr::filter(is.finite(AGC_map), AGC_map != NA_CODE) |>
+    dplyr::summarise(n = dplyr::n(), r = cor(AGC_pred, AGC_map),
+                     mean_obs = mean(AGC_pred), mean_fit = mean(AGC_map))
   cat("GEE fitted AGC at the training points (in-sample, sanity check only):\n")
   print_tbl(ins, 3)
-
-  cm_map <- class_means(agc_map)
-  cat("Class means, classes from the GEE cover map:\n")
-  print_tbl(cm_map, 2)
-  readr::write_csv(cm_map, out_file("P4_tier2_class_means_map.csv"))
-  if (file.exists(out_file("P4_tier2_class_means.csv"))) {
-    prov <- readr::read_csv(out_file("P4_tier2_class_means.csv"), show_col_types = FALSE) |>
-      dplyr::select(cov_class, n_R = n, mean_R = mean_gC_m2)
-    cat("Compared with the provisional R classes (P4_05):\n")
-    print_tbl(dplyr::left_join(cm_map |> dplyr::mutate(cov_class = as.character(cov_class)) |>
-                                 dplyr::select(cov_class, n_map = n, mean_map = mean_gC_m2),
-                               prov |> dplyr::mutate(cov_class = as.character(cov_class)),
-                               by = "cov_class"), 2)
-  }
-
-  loyo_map <- purrr::map_dfr(sort(unique(agc_map$year)), function(y) {
-    class_means(agc_map |> dplyr::filter(year != y)) |> dplyr::mutate(left_out_year = y, .before = 1)
-  })
-  readr::write_csv(loyo_map, out_file("P4_tier2_loyo_map.csv"))
-
-  if (!is.null(tot)) {
-    cm_c <- cm_map |> dplyr::mutate(cov_class = as.character(cov_class))
-    t2 <- cls_area |>
-      dplyr::group_by(year) |>
-      dplyr::group_modify(~ tier2_total(.x, cm_c, mean(agc_map$AGC_pred))) |>
-      dplyr::ungroup()
-    t2_loyo <- purrr::map_dfr(unique(loyo_map$left_out_year), function(y) {
-      cm_y <- loyo_map |> dplyr::filter(left_out_year == y) |>
-        dplyr::mutate(cov_class = as.character(cov_class))
-      cls_area |> dplyr::group_by(year) |>
-        dplyr::group_modify(~ tier2_total(.x, cm_y, mean(agc_map$AGC_pred[agc_map$year != y]))) |>
-        dplyr::ungroup()
-    }) |>
-      dplyr::group_by(year) |>
-      dplyr::summarise(loyo_min_tC = min(total_tC), loyo_max_tC = max(total_tC), .groups = "drop")
-    t2 <- dplyr::left_join(t2, t2_loyo, by = "year") |>
-      dplyr::mutate(ci_low_tC = total_tC - ci_half_tC, ci_up_tC = total_tC + ci_half_tC)
-    print_tbl(t2, 0)
-    readr::write_csv(t2, out_file("P4_tier2_national_map.csv"))
-  }
 }
 
 # =============================================================================
@@ -308,14 +281,14 @@ step("STEP 4: national totals, three methods")
 if (!is.null(tot)) {
   t1_pooled <- tier1 |> dplyr::filter(year == "pooled")
   nat3 <- dplyr::bind_rows(
-    nat_px |> dplyr::transmute(year, method = "Pixel-based", total_tC, ci_low_tC, ci_up_tC),
+    nat_px |> dplyr::transmute(year, method = "Pixel-based GSE", total_tC, ci_low_tC, ci_up_tC),
     tier1 |> dplyr::filter(year != "pooled") |>
       dplyr::transmute(year = as.integer(year), method = "Tier 1 (survey-year mean)",
                        total_tC, ci_low_tC, ci_up_tC),
     tibble::tibble(year = sort(unique(nat_px$year)), method = "Tier 1 (pooled mean)",
                    total_tC = t1_pooled$total_tC, ci_low_tC = t1_pooled$ci_low_tC,
                    ci_up_tC = t1_pooled$ci_up_tC),
-    if (!is.null(t2)) t2 |> dplyr::transmute(year, method = "Tier 2 (pooled class means)",
+    if (!is.null(t2)) t2 |> dplyr::transmute(year, method = "Tier 2 (ecoregion strata)",
                                              total_tC, ci_low_tC, ci_up_tC)
   ) |>
     dplyr::mutate(total_kt = total_tC / 1e3, ci_low_kt = ci_low_tC / 1e3, ci_up_kt = ci_up_tC / 1e3)
@@ -336,7 +309,7 @@ if (!is.null(tot)) {
          colour = NULL, fill = NULL) +
     theme_minimal(base_size = 11) + theme(legend.position = "bottom")
   print(p_nat)
-  # ggsave(out_file("P4_fig_national_three_methods.png"), p_nat, width = 8, height = 5, dpi = 300)
+  ggsave(out_file("P4_fig_national_three_methods.png"), p_nat, width = 8, height = 5, dpi = 300)
 }
 
 # =============================================================================
@@ -348,15 +321,6 @@ if (!is.null(tot)) {
     dplyr::group_by(year, eco_id, ecoregion) |>
     dplyr::summarise(area_km2 = sum(area_m2) / 1e6, px_total_tC = sum(agc_g) / 1e6, .groups = "drop") |>
     dplyr::mutate(px_mean_gC_m2 = px_total_tC / area_km2)
-  if (!is.null(cm_map)) {
-    t2_eco <- tot |>
-      dplyr::group_by(year, eco_id, class) |>
-      dplyr::summarise(area_km2 = sum(area_m2) / 1e6, .groups = "drop") |>
-      dplyr::left_join(cm_map |> dplyr::select(class = cov_class, mean_gC_m2), by = "class") |>
-      dplyr::group_by(year, eco_id) |>
-      dplyr::summarise(t2_total_tC = sum(area_km2 * mean_gC_m2, na.rm = TRUE), .groups = "drop")
-    eco_year <- dplyr::left_join(eco_year, t2_eco, by = c("year", "eco_id"))
-  }
   readr::write_csv(eco_year, out_file("P4_ecoregion_by_year.csv"))
 
   eco_field <- agc |>
@@ -372,10 +336,12 @@ if (!is.null(tot)) {
     dplyr::summarise(area_km2 = mean(area_km2),
                      px_total_min_tC = min(px_total_tC), px_total_max_tC = max(px_total_tC),
                      px_total_tC = mean(px_total_tC),
-                     t2_total_tC = if ("t2_total_tC" %in% names(eco_year)) mean(t2_total_tC) else NA_real_,
                      .groups = "drop") |>
     dplyr::relocate(px_total_tC, .before = px_total_min_tC) |>
     dplyr::left_join(eco_field, by = "ecoregion") |>
+    dplyr::left_join(if (!is.null(t2_eco)) t2_eco |> dplyr::select(ecoregion, t2_stratum = stratum,
+                                                                   t2_total_tC, t2_ci_half_tC) else
+                       tibble::tibble(ecoregion = character(0)), by = "ecoregion") |>
     dplyr::mutate(n_agc = dplyr::coalesce(n_agc, 0L),
                   px_mean_gC_m2 = px_total_tC / area_km2,
                   reported = n_agc >= CFG$min_n_eco,
@@ -387,7 +353,9 @@ if (!is.null(tot)) {
                   share_area_pct = 100 * area_km2 / sum(area_km2),
                   share_samples_pct = 100 * n_agc / sum(n_agc)) |>
     dplyr::arrange(dplyr::desc(area_km2))
-  cat("Tier 1 ecoregion CI uses the national DEFF (an approximation).\n")
+  cat("Ecoregion CIs use the national DEFF (an approximation).\n",
+      "t1_eco = field mean of the ecoregion x area (= Tier 2 where the ecoregion is a stratum);\n",
+      "t1_national_factor = national mean x area (Tier 1 applied to the ecoregion).\n")
   print(as.data.frame(eco_sum |> dplyr::select(ecoregion, area_km2, share_area_pct, n_agc,
                                                share_samples_pct, px_mean_gC_m2, field_mean_gC_m2,
                                                px_total_tC, t1_eco_total_tC, t2_total_tC)),
@@ -402,76 +370,39 @@ if (!is.null(tot)) {
     labs(title = "Where the extent is vs where the samples are", x = NULL, y = "Share (%)", fill = NULL) +
     theme_minimal(base_size = 11)
   print(p_share)
-  # ggsave(out_file("P4_fig_ecoregion_share.png"), p_share, width = 8, height = 5, dpi = 300)
+  ggsave(out_file("P4_fig_ecoregion_share.png"), p_share, width = 8, height = 5, dpi = 300)
 }
 
 # =============================================================================
-# STEP 6: ROIs -- local field mean x area vs pixel-based vs the national factor
-# Year = the survey year with most samples in the ROI; area = national extent
-# inside the ROI.
+# STEP 6: Area-weighted bias of the held-out ecoregion means (LOLO, P4_04)
+# The national bias of the pixel-based CI is sample-weighted; ecoregions with many
+# samples dominate it. Here each held-out ecoregion mean error is weighted by the
+# extent area of the ecoregion, then scaled to the national extent.
 # =============================================================================
-step("STEP 6: ROI comparison")
-roi_poly <- if (!is.na(CFG$roi_path)) CFG$roi_path else gee_path("P4_roi_polygons.geojson")
-if (has_gee("P4_gee_roi_totals.csv") && file.exists(roi_poly)) {
-  idf <- CFG$roi_id_field
-  roi_tot <- read_core_addon("P4_gee_roi_totals.csv", "P4_gee_roi_totals_addon.csv", c(idf, "year")) |>
-    dplyr::rename(loc_id = dplyr::all_of(idf)) |>
-    dplyr::mutate(loc_id = as.character(loc_id), year = as.integer(year))
-
-  sf::sf_use_s2(FALSE)
-  roi <- sf::st_transform(sf::st_read(roi_poly, quiet = TRUE), 4326)
-  pts <- sf::st_as_sf(agc, coords = c("xcoord", "ycoord"), crs = 4326, remove = FALSE)
-  in_roi <- suppressMessages(sf::st_join(pts, roi[, idf], join = sf::st_within)) |>
-    sf::st_drop_geometry() |>
-    dplyr::rename(loc_id = dplyr::all_of(idf)) |>
-    dplyr::filter(!is.na(loc_id)) |>
-    dplyr::mutate(loc_id = as.character(loc_id))
-
-  roi_cmp <- in_roi |>
-    dplyr::group_by(loc_id) |>
-    dplyr::mutate(n_all = dplyr::n(), years = paste(sort(unique(year)), collapse = ";")) |>
-    dplyr::count(loc_id, year, n_all, years, name = "n_year") |>
-    dplyr::slice_max(n_year, n = 1, with_ties = FALSE) |>
-    dplyr::ungroup() |>
-    dplyr::rename(dom_year = year) |>
-    dplyr::left_join(in_roi |> dplyr::group_by(loc_id, year) |>
-                       dplyr::summarise(field_mean_gC_m2 = mean(AGC_pred), field_sd_gC_m2 = sd(AGC_pred),
-                                        .groups = "drop"),
-                     by = c("loc_id", "dom_year" = "year")) |>
-    dplyr::left_join(roi_tot, by = c("loc_id", "dom_year" = "year")) |>
-    dplyr::mutate(area_km2 = area_m2 / 1e6,
-                  px_total_tC = agc_g / 1e6,
-                  px_mean_gC_m2 = px_total_tC / area_km2,
-                  t1_local_tC = field_mean_gC_m2 * area_km2,
-                  t1_national_tC = mean(agc$AGC_pred) * area_km2,
-                  bias_px_pct = 100 * (px_mean_gC_m2 - field_mean_gC_m2) / field_mean_gC_m2,
-                  bias_national_pct = 100 * (mean(agc$AGC_pred) - field_mean_gC_m2) / field_mean_gC_m2,
-                  px_closer = abs(bias_px_pct) < abs(bias_national_pct),
-                  small_n = n_year < 10) |>
-    dplyr::filter(!is.na(area_km2), area_km2 > 0) |>
-    dplyr::arrange(field_mean_gC_m2)
-  print(as.data.frame(roi_cmp |> dplyr::select(loc_id, dom_year, n_year, area_km2, field_mean_gC_m2,
-                                               px_mean_gC_m2, bias_px_pct, bias_national_pct)),
-        row.names = FALSE, digits = 3)
-  cat(sprintf("ROIs: %d | pixel-based closer than the national factor in %d | median |bias| pixel %.0f%%, national factor %.0f%%\n",
-              nrow(roi_cmp), sum(roi_cmp$px_closer), median(abs(roi_cmp$bias_px_pct)),
-              median(abs(roi_cmp$bias_national_pct))))
-  cat("Pixel-based ROI values here are fitted where the ROI samples trained the model;\n",
-      "for the out-of-fold check set CFG$roi_path to this GeoJSON and rerun P4_04 (shrinkage, ROI).\n")
-  readr::write_csv(roi_cmp, out_file("P4_roi_comparison.csv"))
-
-  p_roi <- ggplot(roi_cmp, aes(x = field_mean_gC_m2, y = px_mean_gC_m2)) +
-    geom_abline(slope = 1, intercept = 0, linetype = 2, colour = "grey50") +
-    geom_hline(yintercept = mean(agc$AGC_pred), colour = "firebrick", linetype = 3) +
-    geom_point(aes(size = n_year), alpha = 0.7) +
-    labs(title = "ROI mean AGC: field vs pixel-based (dominant survey year)",
-         subtitle = "dashed = 1:1, dotted = national Tier 1 factor",
-         x = "Field mean (gC m-2)", y = "Pixel-based mean over the ROI extent (gC m-2)", size = "n") +
-    theme_minimal(base_size = 11)
-  print(p_roi)
-  # ggsave(out_file("P4_fig_roi_field_vs_pixel.png"), p_roi, width = 6, height = 5, dpi = 300)
-} else if (!file.exists(roi_poly)) {
-  cat(sprintf("  -> skipped: ROI polygons not found (%s)\n", roi_poly))
+step("STEP 6: area-weighted LOLO bias")
+if (!is.null(tot) && file.exists(out_file("P4_lolo_region_means.csv"))) {
+  lr <- readr::read_csv(out_file("P4_lolo_region_means.csv"), show_col_types = FALSE) |>
+    dplyr::left_join(eco_area |> dplyr::select(ecoregion, area_km2), by = "ecoregion")
+  aw <- function(d, label) {
+    w <- d$area_km2 / sum(d$area_km2)
+    tibble::tibble(ecoregions = label, n_ecoregions = nrow(d),
+                   area_covered_pct = 100 * sum(d$area_km2) / AREA_KM2,
+                   bias_pixel_gC_m2 = sum(w * (d$pixel_based - d$field)),
+                   bias_tier1_gC_m2 = sum(w * (d$tier1 - d$field)),
+                   bias_pixel_sample_weighted_gC_m2 = sum(d$n * (d$pixel_based - d$field)) / sum(d$n)) |>
+      dplyr::mutate(bias_pixel_national_kt = bias_pixel_gC_m2 * AREA_KM2 / 1e3,
+                    bias_tier1_national_kt = bias_tier1_gC_m2 * AREA_KM2 / 1e3,
+                    pixel_ci_half_kt = 1.96 * upar[["se_mean_resid_gC_m2"]] * AREA_KM2 / 1e3,
+                    pixel_bias_inside_ci = abs(bias_pixel_national_kt) <= pixel_ci_half_kt)
+  }
+  lr_ok <- lr |> dplyr::filter(!is.na(area_km2), area_km2 > 0)
+  awb <- dplyr::bind_rows(aw(lr_ok |> dplyr::filter(reported), sprintf("n >= %d", CFG$min_n_eco)),
+                          aw(lr_ok, "all with AGC samples"))
+  print_tbl(awb, 2)
+  cat("Bias = held-out prediction - field mean (gC m-2); kt = bias x national extent area.\n")
+  readr::write_csv(awb, out_file("P4_lolo_area_weighted_bias.csv"))
+} else {
+  cat("  -> skipped: needs the GEE totals and P4_lolo_region_means.csv (P4_04)\n")
 }
 
 # =============================================================================
@@ -584,7 +515,7 @@ if (has_gee("P4_gee_distance_area.csv")) {
     dplyr::arrange(design)
   if (file.exists(out_file("P4_metrics_summary.csv"))) {
     ms <- readr::read_csv(out_file("P4_metrics_summary.csv"), show_col_types = FALSE) |>
-      dplyr::filter(method %in% c("Pixel-based", "Tier 1")) |>
+      dplyr::filter(sample_set == "all", method %in% c("Pixel-based GSE", "Tier 1")) |>
       dplyr::select(design, method, median_dist_m, MEC_mean, MEC_q025, MEC_q975) |>
       tidyr::pivot_wider(names_from = method, values_from = c(MEC_mean, MEC_q025, MEC_q975)) |>
       dplyr::mutate(design = factor(design, levels = CFG$designs))
@@ -623,7 +554,7 @@ if (has_gee("P4_gee_distance_area.csv")) {
          x = NULL, y = "Share of extent area (%)", fill = "Validation design") +
     theme_minimal(base_size = 11) + theme(axis.text.x = element_text(angle = 45, hjust = 1))
   print(p_dist)
-  # ggsave(out_file("P4_fig_distance_coverage.png"), p_dist, width = 8, height = 5, dpi = 300)
+  ggsave(out_file("P4_fig_distance_coverage.png"), p_dist, width = 8, height = 5, dpi = 300)
 }
 if (has_gee("P4_gee_distance_pct.csv")) {
   dp <- read_gee("P4_gee_distance_pct.csv") |>
@@ -734,7 +665,7 @@ if (has_gee("P4_gee_gse_sim_sample.csv")) {
          y = "AGC CV 2017-2024 (%)", fill = "Pixels") +
     theme_minimal(base_size = 11)
   print(p_sim)
-  # ggsave(out_file("P4_fig_gse_similarity_vs_cv.png"), p_sim, width = 6, height = 5, dpi = 300)
+  ggsave(out_file("P4_fig_gse_similarity_vs_cv.png"), p_sim, width = 6, height = 5, dpi = 300)
 }
 if (has_gee("P4_gee_gse_sim_points.csv")) {
   sp_raw <- read_gee("P4_gee_gse_sim_points.csv")
@@ -769,7 +700,7 @@ if (has_gee("P4_gee_gse_sim_points.csv")) {
          x = "Years between survey and map year", y = "GSE similarity (dot product)") +
     theme_minimal(base_size = 11)
   print(p_lag)
-  # ggsave(out_file("P4_fig_gse_similarity_lag.png"), p_lag, width = 6, height = 4, dpi = 300)
+  ggsave(out_file("P4_fig_gse_similarity_lag.png"), p_lag, width = 6, height = 4, dpi = 300)
 }
 
 if (has_gee("P4_gee_importance.csv")) {

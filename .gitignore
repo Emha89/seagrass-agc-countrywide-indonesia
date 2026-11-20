@@ -1,5 +1,7 @@
 # Field data and results (not shared -- see README, Data availability)
 /result/
+/output/
+/manuscript/
 /data/*
 !/data/README.md
 !/data/master_raw_template.csv

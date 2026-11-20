@@ -1,6 +1,11 @@
 # =============================================================================
 # P4_06_gee_prepare.R
-# Paper 4 revised design: the two files to upload to GEE before P4_G01-G04.
+# Paper 4, design v3: the two files uploaded to GEE before P4_G01-G04, and the
+# eco_id lookup that P4_07 needs.
+#
+# v3: the sample build is that of P4v2, so the table written here equals the P4v2
+# upload and no new upload is needed. Compare the FINGERPRINT printed below with
+# the P4_G01 console (or the P4v2 run); upload again only if they differ.
 #
 # Reads : P4_samples.csv (P4_01), MEOW shapefile (CFG$meow_path)
 # Writes: <out_dir>/gee_upload/P4_gee_training.csv
@@ -18,8 +23,7 @@
 #         P4_meow_lookup.csv   eco_id <-> ECOREGION (P4_07 uses it)
 # =============================================================================
 
-# setwd("path/to/seagrass-agc-countrywide-indonesia/R")   # folder that holds these scripts
-source("P4_00_config_functions.R")
+source("R/P4_00_config_functions.R")
 
 NA_CODE <- -9999
 up_dir  <- out_file("gee_upload")
@@ -100,7 +104,8 @@ fp <- gee_tbl |>
 cat("\nFINGERPRINT (compare with the P4_G01 console):\n")
 print(as.data.frame(fp), row.names = FALSE)
 
-cat("\nUpload to GEE (create the asset folder chapter_3/output/P4v2 first):\n",
+cat("\nUpload to GEE only if the fingerprint differs from the P4v2 asset",
+    "(create the asset folder chapter_3/output/P4v2 first):\n",
     " 1. P4_gee_training.csv -> chapter_3/output/P4v2/P4_gee_training (X = xcoord, Y = ycoord)\n",
     " 2. P4_meow_indo.shp/.shx/.dbf/.prj/.cpg -> chapter_3/output/P4v2/P4_meow_indo\n",
     " 3. Check RF_COV in P4_G01 against P4_best_params.csv, then run P4_G01_train_apply.js\n")

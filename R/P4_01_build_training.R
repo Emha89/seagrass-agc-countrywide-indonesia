@@ -1,24 +1,32 @@
 # =============================================================================
 # P4_01_build_training.R
-# Paper 4 revised design: GSE-only training tables and validation groups.
+# Paper 4, design v3: GSE training tables, validation groups and the
+# Sentinel-2 predictors of the benchmark model.
 #
-# Reads : master_raw_YYYY.csv (2017-2023) from 01_build_master_raw.R
+# Reads : data/master_raw/master_raw_YYYY.csv (2017-2023) from 01_build_master_raw.R
 #         MEOW shapefile (NoCoast version)
+#         CFG$gse_path  GSE of the current dataset version (P4_G00)
+#         CFG$s2_dir    P4_gee_s2_extract_YYYY.csv (P4_G11), optional
+#         P4_measured_agc.csv  measured AGC linked to gee_id (P4_01a; optional)
 # Writes (CFG$out_dir):
 #   P4_predictor_na.csv         samples that missing predictors would remove
 #   P4_agc_without_env.csv      AGC samples without ACA depth or distToLand (QGIS check)
-#   P4_samples.csv              all samples used by the AGC or the cover model,
-#                               with group IDs for every validation design
+#   P4_samples.csv              all samples of the sample build, with group IDs for
+#                               every validation design, Sentinel-2 predictors and has_s2
 #   (GEE upload table: P4_06_gee_prepare.R)
 #   P4_counts_ecoregion_year.csv
 #   P4_pixel_sharing.csv
 #   P4_cluster_summary.csv
 #   P4_gse_norm_check.csv
 #   P4_gse_version_check.csv    (when CFG$gse_path is set) master_raw vs current GSE per year
+#   P4_s2_availability.csv      AGC samples with a clear Sentinel-2 pixel, by year and ecoregion
+#
+# v3: STEPS 1-7 are those of P4v2, so P4_samples.csv keeps its rows and row order
+# (the GEE training asset and every GEE export are joined on that order). STEP 8
+# adds the Sentinel-2 columns at the end; STEP 9 the optional measured AGC.
 # =============================================================================
 
-# setwd("path/to/seagrass-agc-countrywide-indonesia/R")   # folder that holds these scripts
-source("P4_00_config_functions.R")
+source("R/P4_00_config_functions.R")
 
 # =============================================================================
 # STEP 1: Read master_raw and keep complete predictors
@@ -55,6 +63,9 @@ raw <- raw |>
 # ---- GSE from the current dataset version (CFG$gse_path, from P4_G00) -----------
 # Samples not in the file get no GSE (they are dropped below), so every training
 # vector comes from the same dataset version as the maps.
+if (!is.na(CFG$gse_path) && !file.exists(CFG$gse_path))
+  warning(sprintf("CFG$gse_path is set but %s was not found: master_raw GSE values are used.",
+                  CFG$gse_path))
 if (!is.na(CFG$gse_path) && file.exists(CFG$gse_path)) {
   gnew <- readr::read_csv(CFG$gse_path, show_col_types = FALSE,
                           col_types = readr::cols(gee_id = "c", .default = readr::col_double()))
@@ -250,7 +261,71 @@ if (length(eco_small) > 0)
               CFG$min_n_eco, paste(eco_small, collapse = ", ")))
 
 # =============================================================================
-# STEP 8: Save
+# STEP 8: Sentinel-2 predictors at the AGC samples (P4_G11), survey-year composite
+# has_s2 = AGC sample with all percentile features and >= CFG$s2_min_obs clear
+# observations in its survey year. Only these samples enter the Sentinel-2 comparison.
+# =============================================================================
+s2_files <- list.files(CFG$s2_dir, pattern = CFG$s2_pattern, full.names = TRUE)
+if (length(s2_files) == 0) {
+  cat(sprintf("\nSentinel-2: no %s files in %s (run P4_G11): has_s2 = FALSE for all samples\n",
+              CFG$s2_pattern, CFG$s2_dir))
+  samples[c(CFG$s2_vars, "S2_nobs")] <- NA_real_
+  samples$has_s2 <- FALSE
+} else {
+  s2 <- purrr::map_dfr(s2_files, readr::read_csv, show_col_types = FALSE,
+                       col_types = readr::cols(gee_id = "c", .default = readr::col_double()))
+  miss <- setdiff(c("gee_id", "year", CFG$s2_vars, "S2_nobs"), names(s2))
+  if (length(miss) > 0) stop("Sentinel-2 files lack columns: ", paste(miss, collapse = ", "))
+  s2 <- s2[, c("gee_id", "year", CFG$s2_vars, "S2_nobs")]
+  for (v in CFG$s2_vars) s2[[v]][!is.na(s2[[v]]) & s2[[v]] <= -9999] <- NA_real_
+  s2$S2_nobs[is.na(s2$S2_nobs) | s2$S2_nobs < 0] <- 0
+  key_s2 <- paste(s2$gee_id, s2$year)
+  if (anyDuplicated(key_s2) > 0) stop("Duplicated gee_id x year in the Sentinel-2 files")
+  m <- match(paste(samples$gee_id, samples$year), key_s2)
+  samples[c(CFG$s2_vars, "S2_nobs")] <- s2[m, c(CFG$s2_vars, "S2_nobs")]
+  samples$has_s2 <- samples$is_agc & !is.na(m) & dplyr::coalesce(samples$S2_nobs, 0) >= CFG$s2_min_obs &
+    stats::complete.cases(as.data.frame(samples[, CFG$s2_vars]))
+  if (!is.null(CFG$s2_years)) {
+    samples$has_s2 <- samples$has_s2 & samples$year %in% CFG$s2_years
+    cat(sprintf("Sentinel-2 comparison limited to the survey years %s (CFG$s2_years)\n",
+                paste(CFG$s2_years, collapse = ", ")))
+  }
+  cat(sprintf("\nSentinel-2 (%d files): %d of %d AGC samples in the files, %d with a clear pixel (has_s2)\n",
+              length(s2_files), sum(samples$is_agc & !is.na(m)), sum(samples$is_agc), sum(samples$has_s2)))
+}
+
+s2_avail <- dplyr::bind_rows(
+  samples |> dplyr::filter(is_agc) |>
+    dplyr::group_by(year = as.character(year), ecoregion) |>
+    dplyr::summarise(n_agc = dplyr::n(), n_has_s2 = sum(has_s2),
+                     median_nobs = suppressWarnings(stats::median(S2_nobs, na.rm = TRUE)), .groups = "drop"),
+  samples |> dplyr::filter(is_agc) |>
+    dplyr::group_by(year = as.character(year)) |>
+    dplyr::summarise(ecoregion = "All", n_agc = dplyr::n(), n_has_s2 = sum(has_s2),
+                     median_nobs = suppressWarnings(stats::median(S2_nobs, na.rm = TRUE)), .groups = "drop"),
+  samples |> dplyr::filter(is_agc) |>
+    dplyr::summarise(year = "All", ecoregion = "All", n_agc = dplyr::n(), n_has_s2 = sum(has_s2),
+                     median_nobs = suppressWarnings(stats::median(S2_nobs, na.rm = TRUE)))
+) |>
+  dplyr::mutate(pct_has_s2 = 100 * n_has_s2 / n_agc)
+cat("AGC samples with a clear Sentinel-2 pixel, by survey year:\n")
+print_tbl(s2_avail |> dplyr::filter(ecoregion == "All"), 1)
+readr::write_csv(s2_avail, out_file("P4_s2_availability.csv"))
+
+# =============================================================================
+# STEP 9 (optional): AGC measured directly in the field (CFG$measured_path)
+# =============================================================================
+meas_path <- if (is.na(CFG$measured_path)) out_file("P4_measured_agc.csv") else CFG$measured_path
+if (isTRUE(CFG$use_measured) && file.exists(meas_path)) {
+  meas <- readr::read_csv(meas_path, show_col_types = FALSE,
+                          col_types = readr::cols_only(gee_id = "c", year = "i", AGC_measured = "d"))
+  m <- match(paste(samples$gee_id, samples$year), paste(meas$gee_id, meas$year))
+  samples$AGC_measured <- meas$AGC_measured[m]
+  cat(sprintf("Measured AGC: %d AGC samples matched\n", sum(samples$is_agc & !is.na(samples$AGC_measured))))
+}
+
+# =============================================================================
+# STEP 10: Save
 # =============================================================================
 readr::write_csv(samples, out_file("P4_samples.csv"))
 cat(sprintf("Saved: P4_samples.csv (%d rows x %d cols)\n", nrow(samples), ncol(samples)))
@@ -258,7 +333,7 @@ cat(sprintf("Saved: P4_samples.csv (%d rows x %d cols)\n", nrow(samples), ncol(s
 # The GEE upload table (with GSE values and a row id) is written by P4_06_gee_prepare.R
 
 # =============================================================================
-# STEP 9: Plots (printed only)
+# STEP 11: Plots (printed only)
 # =============================================================================
 comp <- samples |>
   dplyr::filter(is_agc) |>
@@ -285,6 +360,6 @@ if (requireNamespace("maps", quietly = TRUE)) {
                                 fill = NA, colour = "grey50", linewidth = 0.2)
 }
 print(p_map)
-# ggsave(out_file("P4_fig_samples_map.png"), p_map, width = 10, height = 5, dpi = 300)
+ggsave(out_file("P4_fig_samples_map.png"), p_map, width = 10, height = 5, dpi = 300)
 
 cat("\nP4_01_build_training.R COMPLETE\n")
