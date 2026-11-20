@@ -30,16 +30,23 @@
 # =============================================================================
 
 source("R/P4_00_config_functions.R")
-cat("P4_11_zenodo_package.R | version 2026-11-20 (v3)\n")
+cat("P4_11_zenodo_package.R | version 2026-11-21 (v3)\n")
 
 # -----------------------------------------------------------------------------
 # CONFIG -- edit here only
 # -----------------------------------------------------------------------------
 ZEN <- list(
   version   = "1.0",
+  # deposit folder (about 5 GB of zips): set a folder on a large local disk if the
+  # project folder is synced to the cloud, for example "D:/P4_zenodo_v1"
   dir       = out_file("P4_zenodo_v1"),
   checks    = out_file("P4_11_checks.txt"),
-  maps_dir  = "data/zenodo_maps",                  # GeoTIFFs of P4_G10 (Drive folder P4v3_ZENODO)
+  # GeoTIFFs of P4_G10 (Drive folder P4v3_ZENODO, all download zips extracted); the
+  # folder may be outside the project, for example on an external disk (use / in paths)
+  maps_dir  = "data/zenodo_maps",
+  maps_recursive = TRUE,                           # also search subfolders (one per extracted zip)
+  check_tiles = TRUE,                              # every product must have the same tiles (see 1a);
+                                                   # FALSE only after checking the tiles in Drive
   tab_dir   = out_file("P4_tables_v3"),            # P4_09
   grid_dist = file.path(if (!is.null(CFG$gee_dir)) CFG$gee_dir else out_file("gee"),
                         "P4_grid500m_dist.csv"),   # P4_G08
@@ -82,13 +89,32 @@ fail <- function(...) { s <- sprintf(...); cat("  PROBLEM:", s, "\n"); problems 
 note("== 1. Inputs")
 
 # 1a. map products
-tif <- list.files(ZEN$maps_dir, pattern = "^P4_seagrass_.*\\.tif$", full.names = TRUE)
+tif <- list.files(ZEN$maps_dir, pattern = "^P4_seagrass_.*\\.tif$", full.names = TRUE,
+                  recursive = ZEN$maps_recursive)
+dup <- unique(basename(tif)[duplicated(basename(tif))])
+if (length(dup) > 0) fail("the same tile is in more than one folder (keep one copy): %s",
+                          paste(head(dup, 5), collapse = ", "))
 product_of <- function(f) sub("(-\\d+-\\d+)?\\.tif$", "", basename(f))
+tile_of    <- function(f) { m <- regmatches(basename(f), regexpr("-\\d+-\\d+(?=\\.tif$)", basename(f), perl = TRUE))
+                            if (length(m) == 0) "(single file)" else m }
 by_product <- split(tif, vapply(tif, product_of, ""))
 for (p in MAP_PRODUCTS) {
   n <- length(by_product[[p]])
   if (n == 0) fail("map product missing in %s: %s (run P4_G10 and download P4v3_ZENODO)", ZEN$maps_dir, p)
   else note("map %-36s %d file(s), %.1f MB", p, n, sum(file.size(by_product[[p]])) / 1e6)
+}
+# all products share one mask (the final extent), so GEE writes the same tiles for
+# each; a tile missing from one product usually means a download zip not extracted
+present <- intersect(MAP_PRODUCTS, names(by_product))
+if (ZEN$check_tiles && length(present) > 1) {
+  tiles <- lapply(by_product[present], function(f) unique(vapply(f, tile_of, "")))
+  all_tiles <- sort(unique(unlist(tiles)))
+  note("tiles: %d different tile positions over %d products", length(all_tiles), length(present))
+  for (p in present) {
+    miss <- setdiff(all_tiles, tiles[[p]])
+    if (length(miss) > 0) fail("%s lacks %d tile(s) that other products have: %s (extract every download zip; compare with the P4v3_ZENODO folder in Drive)",
+                               p, length(miss), paste(head(miss, 6), collapse = ", "))
+  }
 }
 extra <- setdiff(names(by_product), MAP_PRODUCTS)
 if (length(extra) > 0) fail("unexpected map files (not copied, remove or rename): %s", paste(extra, collapse = ", "))
@@ -133,7 +159,7 @@ dir.create(ZEN$dir, recursive = TRUE)
 # 2a. maps: one zip per product with all its tiles
 zip_files <- function(zipfile, files) {
   if (requireNamespace("zip", quietly = TRUE)) {
-    zip::zip(zipfile, files = basename(files), root = dirname(files[1]), mode = "cherry-pick")
+    zip::zip(zipfile, files = files, mode = "cherry-pick")   # tiles without their folders
     return(TRUE)
   }
   if (nzchar(Sys.which("zip")) || nzchar(Sys.getenv("R_ZIPCMD"))) {
