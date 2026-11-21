@@ -29,8 +29,10 @@
 # data (coordinate or sample ID columns, or more rows than ZEN$max_rows).
 # =============================================================================
 
+if (!file.exists("R/P4_00_config_functions.R"))
+  stop("Run P4_11 from the project root (open the .Rproj file). Working directory now: ", getwd(), call. = FALSE)
 source("R/P4_00_config_functions.R")
-cat("P4_11_zenodo_package.R | version 2026-11-21b (v3)\n")
+cat("P4_11_zenodo_package.R | version 2026-11-21c (v3)\n")
 
 # -----------------------------------------------------------------------------
 # CONFIG -- edit here only
@@ -48,6 +50,8 @@ ZEN <- list(
   check_tiles = TRUE,                              # tile completeness rules of 1a; FALSE only
                                                    # after checking the tiles in the Drive folder
   tab_dir   = out_file("P4_tables_v3"),            # P4_09
+  p09       = "R/P4_09_tables.R",                  # TABNUM gives the exact table files; if the
+                                                   # script is elsewhere, the newest file per table is used
   grid_dist = file.path(if (!is.null(CFG$gee_dir)) CFG$gee_dir else out_file("gee"),
                         "P4_grid500m_dist.csv"),   # P4_G08
   cell_deg  = 0.1,                                 # cell of the distance table (as Fig. 6a)
@@ -89,6 +93,8 @@ fail <- function(...) { s <- sprintf(...); cat("  PROBLEM:", s, "\n"); problems 
 note("== 1. Inputs")
 
 # 1a. map products
+if (!dir.exists(ZEN$maps_dir))
+  fail("map folder not found: %s (in R write Windows paths with /, e.g. \"Q:/folder/P4v3_ZENODO\")", ZEN$maps_dir)
 tif <- list.files(ZEN$maps_dir, pattern = "^P4_seagrass_.*\\.tif$", full.names = TRUE,
                   recursive = ZEN$maps_recursive)
 dup <- unique(basename(tif)[duplicated(basename(tif))])
@@ -153,20 +159,31 @@ if (length(tif) > 0 && requireNamespace("terra", quietly = TRUE)) {
   }
 }
 
-# 1b. tables of the paper and the Supplement: exactly the files named by TABNUM in
-# P4_09, so tables left from earlier numbering are not deposited
-src09 <- parse("R/P4_09_tables.R", keep.source = FALSE)
-TABNUM <- NULL
-for (e in src09) if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(e[[2]], as.name("TABNUM"))) TABNUM <- eval(e[[3]])
-if (is.null(TABNUM)) stop("TABNUM not found in R/P4_09_tables.R")
-want <- sprintf("P4_%s_%s.csv", ifelse(substr(TABNUM, 1, 1) == "S", TABNUM, paste0("T", TABNUM)), names(TABNUM))
+# 1b. tables of the paper and the Supplement: the files named by TABNUM in P4_09,
+# so tables left from an earlier numbering are not deposited
 found <- list.files(ZEN$tab_dir, pattern = "^P4_(T\\d+|S\\d+)_.+\\.csv$")
+tab_md <- file.path(ZEN$tab_dir, "P4_tables_all.md")
+TABNUM <- NULL
+if (file.exists(ZEN$p09)) {
+  for (e in parse(ZEN$p09, keep.source = FALSE))
+    if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(e[[2]], as.name("TABNUM"))) TABNUM <- eval(e[[3]])
+}
+if (!is.null(TABNUM)) {
+  want <- sprintf("P4_%s_%s.csv", ifelse(substr(TABNUM, 1, 1) == "S", TABNUM, paste0("T", TABNUM)), names(TABNUM))
+} else {
+  # without P4_09: the newest file of each table name, written by the last P4_09 run
+  # (within one hour before P4_tables_all.md)
+  info <- file.info(file.path(ZEN$tab_dir, found)); key <- sub("^P4_(T\\d+|S\\d+)_", "", found)
+  t_last <- if (file.exists(tab_md)) file.mtime(tab_md) else max(info$mtime)
+  ok <- info$mtime >= t_last - 3600
+  want <- vapply(split(seq_along(found)[ok], key[ok]), function(i) found[i][which.max(info$mtime[i])], "")
+  note("P4_09 not found at %s: took the newest file of each table from the last P4_09 run", ZEN$p09)
+}
 miss_tab <- setdiff(want, found)
 if (length(miss_tab) > 0) fail("tables missing in %s (run P4_09): %s", ZEN$tab_dir, paste(miss_tab, collapse = ", "))
 old_tab <- setdiff(found, want)
 if (length(old_tab) > 0) note("ignored (earlier numbering, not deposited): %s", paste(old_tab, collapse = ", "))
 tab_files <- file.path(ZEN$tab_dir, intersect(want, found))
-tab_md <- file.path(ZEN$tab_dir, "P4_tables_all.md")
 for (f in tab_files) {
   d <- readr::read_csv(f, show_col_types = FALSE, guess_max = 100000)
   bad <- grep(ZEN$forbidden_cols, names(d), ignore.case = TRUE, value = TRUE)
