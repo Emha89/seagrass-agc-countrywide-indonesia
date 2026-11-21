@@ -30,7 +30,7 @@
 # =============================================================================
 
 source("R/P4_00_config_functions.R")
-cat("P4_11_zenodo_package.R | version 2026-11-21 (v3)\n")
+cat("P4_11_zenodo_package.R | version 2026-11-21b (v3)\n")
 
 # -----------------------------------------------------------------------------
 # CONFIG -- edit here only
@@ -45,8 +45,8 @@ ZEN <- list(
   # folder may be outside the project, for example on an external disk (use / in paths)
   maps_dir  = "data/zenodo_maps",
   maps_recursive = TRUE,                           # also search subfolders (one per extracted zip)
-  check_tiles = TRUE,                              # every product must have the same tiles (see 1a);
-                                                   # FALSE only after checking the tiles in Drive
+  check_tiles = TRUE,                              # tile completeness rules of 1a; FALSE only
+                                                   # after checking the tiles in the Drive folder
   tab_dir   = out_file("P4_tables_v3"),            # P4_09
   grid_dist = file.path(if (!is.null(CFG$gee_dir)) CFG$gee_dir else out_file("gee"),
                         "P4_grid500m_dist.csv"),   # P4_G08
@@ -58,7 +58,7 @@ ZEN <- list(
   # columns that identify samples or their locations; a table holding one is refused
   forbidden_cols = "^(x|y|lon|lat|long|longitude|latitude|xcoord|ycoord|x_coord|y_coord|rid|gee_id|sample_id|block_id|composition_id|quadrat|quadrat_id|transect|transect_id|site_id|cluster_id|meadow_id|geometry)$",
   # file names that belong to inputs or sample-level outputs; never copied
-  forbidden_files = "master_raw|samples|oof|training|measured|paper1|cover_agb|qgis|gse_extract|s2_extract|points|inventory_units|gee_upload",
+  forbidden_files = "master_raw|P4_samples\\.csv|oof|training|measured|paper1|cover_agb|qgis|gse_extract|s2_extract|inventory_units|gee_upload",
   doi       = "10.5281/zenodo.XXXXXXX",            # reserved DOI from the Zenodo form
   code_url  = "https://github.com/Emha89/seagrass-agc-countrywide-indonesia",
   title     = "Seagrass above-ground carbon maps of Indonesia at 10 m, 2017-2024",
@@ -103,16 +103,42 @@ for (p in MAP_PRODUCTS) {
   if (n == 0) fail("map product missing in %s: %s (run P4_G10 and download P4v3_ZENODO)", ZEN$maps_dir, p)
   else note("map %-36s %d file(s), %.1f MB", p, n, sum(file.size(by_product[[p]])) / 1e6)
 }
-# all products share one mask (the final extent), so GEE writes the same tiles for
-# each; a tile missing from one product usually means a download zip not extracted
+# Tile completeness. GEE skips tiles without valid pixels, so a product has a tile
+# wherever it has data. AGC is mapped only inside the extent, and the mean is valid
+# wherever any year is valid, hence: extent tiles >= mean tiles >= tiles of each year.
+# A year may lack a tile whose few pixels were masked in that year, so differences
+# between years are reported but do not stop the script.
 present <- intersect(MAP_PRODUCTS, names(by_product))
-if (ZEN$check_tiles && length(present) > 1) {
+if (length(present) > 0) {
   tiles <- lapply(by_product[present], function(f) unique(vapply(f, tile_of, "")))
   all_tiles <- sort(unique(unlist(tiles)))
-  note("tiles: %d different tile positions over %d products", length(all_tiles), length(present))
+  tile_tab <- data.frame(tile = all_tiles, check.names = FALSE)
   for (p in present) {
-    miss <- setdiff(all_tiles, tiles[[p]])
-    if (length(miss) > 0) fail("%s lacks %d tile(s) that other products have: %s (extract every download zip; compare with the P4v3_ZENODO folder in Drive)",
+    fs <- by_product[[p]]; sz <- setNames(file.size(fs) / 1e6, vapply(fs, tile_of, ""))
+    tile_tab[[sub("^P4_seagrass_", "", p)]] <- ifelse(all_tiles %in% names(sz), round(sz[all_tiles], 1), NA)
+  }
+  utils::write.csv(tile_tab, out_file("P4_11_tiles.csv"), row.names = FALSE, na = "")
+  note("tiles: %d tile positions over %d products (MB per file in %s)", length(all_tiles), length(present),
+       out_file("P4_11_tiles.csv"))
+  print(data.frame(product = present, tiles = lengths(tiles[present]), row.names = NULL), row.names = FALSE)
+  ext  <- "P4_seagrass_extent"; mean_p <- MAP_PRODUCTS[length(MAP_PRODUCTS)]
+  years_p <- intersect(sprintf("P4_seagrass_AGC_%d", ZEN$years), present)
+  if (ZEN$check_tiles) {
+    if (ext %in% present) {
+      miss <- setdiff(all_tiles, tiles[[ext]])
+      if (length(miss) > 0) fail("%s lacks %d tile(s) that an AGC product has: %s (a download zip not extracted, or the extent export incomplete)",
+                                 ext, length(miss), paste(head(miss, 6), collapse = ", "))
+    }
+    if (mean_p %in% present && length(years_p) > 0) {
+      miss <- setdiff(unique(unlist(tiles[years_p])), tiles[[mean_p]])
+      if (length(miss) > 0) fail("%s lacks %d tile(s) that an annual map has: %s", mean_p, length(miss),
+                                 paste(head(miss, 6), collapse = ", "))
+    }
+  }
+  ref <- if (mean_p %in% present) tiles[[mean_p]] else unique(unlist(tiles[years_p]))
+  for (p in years_p) {
+    miss <- setdiff(ref, tiles[[p]])
+    if (length(miss) > 0) note("note: %s has no file at %d tile position(s) of the mean map: %s. Check in the Drive folder that GEE wrote no such file (a tile with no valid pixel that year); otherwise extract the missing file.",
                                p, length(miss), paste(head(miss, 6), collapse = ", "))
   }
 }
@@ -127,12 +153,21 @@ if (length(tif) > 0 && requireNamespace("terra", quietly = TRUE)) {
   }
 }
 
-# 1b. tables of the paper and the Supplement
-tab_files <- list.files(ZEN$tab_dir, pattern = "^P4_(T\\d+|S\\d+)_.+\\.csv$", full.names = TRUE)
-if (length(tab_files) == 0) fail("no tables in %s (run P4_09)", ZEN$tab_dir)
+# 1b. tables of the paper and the Supplement: exactly the files named by TABNUM in
+# P4_09, so tables left from earlier numbering are not deposited
+src09 <- parse("R/P4_09_tables.R", keep.source = FALSE)
+TABNUM <- NULL
+for (e in src09) if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(e[[2]], as.name("TABNUM"))) TABNUM <- eval(e[[3]])
+if (is.null(TABNUM)) stop("TABNUM not found in R/P4_09_tables.R")
+want <- sprintf("P4_%s_%s.csv", ifelse(substr(TABNUM, 1, 1) == "S", TABNUM, paste0("T", TABNUM)), names(TABNUM))
+found <- list.files(ZEN$tab_dir, pattern = "^P4_(T\\d+|S\\d+)_.+\\.csv$")
+miss_tab <- setdiff(want, found)
+if (length(miss_tab) > 0) fail("tables missing in %s (run P4_09): %s", ZEN$tab_dir, paste(miss_tab, collapse = ", "))
+old_tab <- setdiff(found, want)
+if (length(old_tab) > 0) note("ignored (earlier numbering, not deposited): %s", paste(old_tab, collapse = ", "))
+tab_files <- file.path(ZEN$tab_dir, intersect(want, found))
 tab_md <- file.path(ZEN$tab_dir, "P4_tables_all.md")
 for (f in tab_files) {
-  if (grepl(ZEN$forbidden_files, basename(f), ignore.case = TRUE)) { fail("%s: name of an input file", basename(f)); next }
   d <- readr::read_csv(f, show_col_types = FALSE, guess_max = 100000)
   bad <- grep(ZEN$forbidden_cols, names(d), ignore.case = TRUE, value = TRUE)
   if (length(bad) > 0) fail("%s holds sample or location columns: %s", basename(f), paste(bad, collapse = ", "))
