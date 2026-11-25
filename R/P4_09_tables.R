@@ -9,21 +9,21 @@
 #   Table 1  Field data by ecoregion: extent, samples, sites and meadows tested, Tier 2 stratum
 #   Table 2  AGC totals by method, by ecoregion and for Indonesia (aim 1)
 #   Table 3  Inventory-level validation: sites, meadows and ecoregions held out (aim 2)
-# Supplement (provisional order of first citation)
-#   S1  AGC samples by ecoregion and survey year
-#   S2  Presence model cross-validation (P4_G09)
-#   S3  AGC samples inside the extent and the masks that removed the rest
-#   S4  Extent under the geomorphic mask options and the KKP 2025 area
-#   S5  Sentinel-2 L2A availability at the AGC samples, by survey year and ecoregion
-#   S6  Random forest settings of the four AGC models
-#   S7  National AGC by year and method (95 % CI)
-#   S8  Tier 1 by survey year and the survey composition
-#   S9  Tier 2 strata: ecoregion means, effective n, totals and leave-one-year-out range
-#   S10 Clustering, uncertainty parameters and checks of the totals
-#   S11 Site-level accuracy by ecoregion
-#   S12 Accuracy for each ecoregion when it is held out
-#   S13 Sample-level accuracy by validation design, method and sample set
-#   S14 Distance to AGC samples and between-year CV by ecoregion
+# Supplement (order of first citation in the manuscript; numbers set in TABNUM)
+#   S1  samples_year   AGC samples by ecoregion and survey year
+#   S2  s2_avail       Sentinel-2 L2A availability at the AGC samples, by survey year and ecoregion
+#   S3  pa_cv          Presence model cross-validation (P4_G09)
+#   S4  in_extent      AGC samples inside the extent and the masks that removed the rest
+#   S5  extent_kkp     Extent under the geomorphic mask options and the KKP 2025 area
+#   S6  rf_settings    Random forest settings of the four AGC models
+#   S7  tier1_year     Tier 1 by survey year and the survey composition
+#   S8  tier2_strata   Tier 2 strata: ecoregion means, effective n, totals and leave-one-year-out range
+#   S9  national_year  National AGC by year and method (95 % CI)
+#   S10 uncertainty    Clustering, uncertainty parameters and checks of the totals
+#   S11 site_eco       Site-level accuracy by ecoregion
+#   S12 lolo           Accuracy for each ecoregion when it is held out
+#   S13 sample_level   Sample-level accuracy by validation design, method and sample set
+#   S14 dist_cv        Distance to AGC samples and between-year CV by ecoregion
 # Dropped from P4v2: the 22 ROIs (S4), the cover model (S8 classes, S9) and the
 # cover columns of Table 1.
 #
@@ -41,7 +41,7 @@
 # =============================================================================
 
 source("R/P4_00_config_functions.R")
-cat("P4_09_tables.R | version 2026-11-16 (v3)\n")
+cat("P4_09_tables.R | version 2026-11-25 (v3)\n")
 
 # -----------------------------------------------------------------------------
 # TABLE CONFIG -- edit here only
@@ -51,7 +51,7 @@ TAB <- list(
   gee_dir    = if (!is.null(CFG$gee_dir)) CFG$gee_dir else out_file("gee"),
   trf_label  = "Terrestrial Reef Flat",       # ACA geomorphic class removed from the extent
   kkp_km2    = 6601.56,                     # KKP 2025 national seagrass map (official area)
-  turbid_eco = c("Sunda Shelf/Java Sea"),   # S4: option with Terrestrial Reef Flat removed only here
+  turbid_eco = c("Sunda Shelf/Java Sea"),   # extent_kkp table: option with Terrestrial Reef Flat removed only here
   years      = 2017:2024,
   tol_pct    = 0.1,                         # consistency checks: allowed difference (%)
   # Sentinel-2 scenes over the AGC samples per survey year, printed by P4_G11 in the GEE
@@ -69,11 +69,13 @@ TAB <- list(
 )
 # Table numbers by key: change here when the order of first citation is known
 TABNUM <- c(data = "1", totals = "2", inventory = "3",
-            samples_year = "S1", pa_cv = "S2", in_extent = "S3", extent_kkp = "S4", s2_avail = "S5",
-            rf_settings = "S6", national_year = "S7", tier1_year = "S8", tier2_strata = "S9",
+            samples_year = "S1", s2_avail = "S2", pa_cv = "S3", in_extent = "S4", extent_kkp = "S5",
+            rf_settings = "S6", tier1_year = "S7", tier2_strata = "S8", national_year = "S9",
             uncertainty = "S10", site_eco = "S11", lolo = "S12", sample_level = "S13", dist_cv = "S14")
-# 16 Nov 2026: order of first citation in the manuscript (site_eco, lolo and
-# sample_level moved: Results 3.3 cites the site and ecoregion tables before the sample level)
+# 25 Nov 2026: order of first citation in the manuscript (s2_avail is cited in the
+# Sentinel-2 methods before pa_cv; tier1_year and tier2_strata in Results 3.2 before national_year)
+# Table reference for notes, e.g. tref("uncertainty") -> "Table S10" (follows TABNUM)
+tref <- function(key) paste("Table", TABNUM[[key]])
 
 DESIGN_LEVELS <- c("pixel", "b100", "b1000", "cluster", "ecoregion")
 DESIGN_NAME <- c(pixel = "Pixel", b100 = "100 m block", b1000 = "1 km block",
@@ -358,10 +360,10 @@ if (!is.null(eco) && !is.null(px_nat)) {
          "(mean pixel-based total - Tier 2 total) / Tier 2 total x 100, Indonesia")
   pci <- px_nat$ci_half_tC[px_nat$field_data %in% TRUE][1]
   notes <- c("Pixel-based GSE: mean of the annual totals 2017-2024, with the lowest and highest annual total; map mean = mean total / extent.",
-             if (!is.na(pci)) sprintf("Pixel-based 95 %% CI of each national annual total: ± %s kt C (1.96 x cluster-robust SE of the mean out-of-fold residual x extent; Table S10).", num(pci / 1e3, 1)) else "",
+             if (!is.na(pci)) sprintf("Pixel-based 95 %% CI of each national annual total: ± %s kt C (1.96 x cluster-robust SE of the mean out-of-fold residual x extent; %s).", num(pci / 1e3, 1), tref("uncertainty")) else "",
              "Tier 1: national field mean x extent; national 95 % CI with n / DEFF as the effective sample size.",
-             sprintf("Tier 2: ecoregion field mean x ecoregion extent where n >= %d (stratum); * national field mean (fewer than %d samples). 95 %% CI: stratified, n / DEFF per stratum, with the national-mean areas as one pooled term (Table S9).",
-                     CFG$min_n_eco, CFG$min_n_eco))
+             sprintf("Tier 2: ecoregion field mean x ecoregion extent where n >= %d (stratum); * national field mean (fewer than %d samples). 95 %% CI: stratified, n / DEFF per stratum, with the national-mean areas as one pooled term (%s).",
+                     CFG$min_n_eco, CFG$min_n_eco, tref("tier2_strata")))
   if (!is.null(t2_nat)) notes <- c(notes, sprintf("Tier 2 when one survey year is left out of the strata: %s kt C.",
                                                   span(t2_nat$loyo_min_tC / 1e3, t2_nat$loyo_max_tC / 1e3, 1)))
   if (!is.null(t1b)) {
@@ -425,16 +427,16 @@ if (!is.null(im)) {
                    sprintf("Each unit mean is the mean of the out-of-fold predictions of its samples; metrics compare the unit means with the field unit means. Mean over %s repeats (ecoregion: %s seeds); MEC with the 2.5-97.5 percentile range.",
                            paste(unique(nrep$n_repeats[nrep$level != "ecoregion"]), collapse = ", "),
                            paste(unique(nrep$n_repeats[nrep$level == "ecoregion"]), collapse = ", ")),
-                   sprintf("Sentinel-2 set: AGC samples of the %d-%d surveys with a clear Sentinel-2 L2A pixel (n = %s); every method is trained and tested on these samples only (Table S5).",
-                           min(CFG$s2_years), max(CFG$s2_years), num(N_S2, 0)),
+                   sprintf("Sentinel-2 set: AGC samples of the %d-%d surveys with a clear Sentinel-2 L2A pixel (n = %s); every method is trained and tested on these samples only (%s).",
+                           min(CFG$s2_years), max(CFG$s2_years), num(N_S2, 0), tref("s2_avail")),
                    "Tier 1: training national mean. Tier 2: training ecoregion mean (n >= 30), else Tier 1. Local mean: training mean of the same meadow (n >= 10), else Tier 2. Methods equal by definition in a design share one row.",
                    "MEC: 1 - SSE / sum((obs - mean(obs))^2). Bias: (mean pred - mean obs) / mean obs x 100. Slope: cov(obs, pred) / var(obs) of the unit means (1 = no shrinkage toward the mean)."))
 }
 
 # =============================================================================
-# S1: AGC samples by ecoregion and survey year
+# samples_year: AGC samples by ecoregion and survey year
 # =============================================================================
-step("S1")
+step(tref("samples_year"))
 if (!is.null(cnt)) {
   yc <- intersect(as.character(TAB$years), names(cnt))
   S1 <- dplyr::bind_rows(cnt |> dplyr::arrange(dplyr::desc(total)),
@@ -447,9 +449,9 @@ if (!is.null(cnt)) {
 }
 
 # =============================================================================
-# S2: presence model cross-validation (GEE script P4_G09)
+# pa_cv: presence model cross-validation (GEE script P4_G09)
 # =============================================================================
-step("S2")
+step(tref("pa_cv"))
 pa_cv_f <- file.path(TAB$gee_dir, "P4_gee_pa_cv.csv"); pa_n_f <- file.path(TAB$gee_dir, "P4_gee_pa_cv_counts.csv")
 if (file.exists(pa_cv_f)) {
   pcv <- readr::read_csv(pa_cv_f, show_col_types = FALSE)
@@ -479,9 +481,9 @@ if (file.exists(pa_cv_f)) {
 } else cat(sprintf("  -> missing: %s (copy P4_gee_pa_cv.csv and P4_gee_pa_cv_counts.csv from Drive P4v2_GEE)\n", pa_cv_f))
 
 # =============================================================================
-# S3: AGC samples inside the extent
+# in_extent: AGC samples inside the extent
 # =============================================================================
-step("S3")
+step(tref("in_extent"))
 sie <- src("P4_samples_in_extent.csv")
 if (!is.null(sie)) {
   S3 <- sie |> dplyr::mutate(level = factor(level, levels = c("all", "ecoregion", "year")),
@@ -501,9 +503,9 @@ if (!is.null(sie)) {
 }
 
 # =============================================================================
-# S4: extent under the geomorphic mask options and the KKP 2025 area
+# extent_kkp: extent under the geomorphic mask options and the KKP 2025 area
 # =============================================================================
-step("S4")
+step(tref("extent_kkp"))
 esn <- src("P4_extent_sensitivity_national.csv"); ese <- src("P4_extent_sensitivity_ecoregion.csv")
 if (!is.null(esn) && !is.null(ese) && !is.null(px_nat)) {
   core <- esn$area_km2_at_10m[esn$mask == "current"]
@@ -543,9 +545,9 @@ if (!is.null(esn) && !is.null(ese) && !is.null(px_nat)) {
 }
 
 # =============================================================================
-# S5: Sentinel-2 availability at the AGC samples
+# s2_avail: Sentinel-2 availability at the AGC samples
 # =============================================================================
-step("S5")
+step(tref("s2_avail"))
 s2a <- src("P4_s2_availability.csv")
 if (!is.null(s2a)) {
   s2a <- s2a |> dplyr::mutate(year = as.character(year))
@@ -595,9 +597,9 @@ if (!is.null(s2a)) {
 }
 
 # =============================================================================
-# S6: random forest settings of the four AGC models
+# rf_settings: random forest settings of the four AGC models
 # =============================================================================
-step("S6")
+step(tref("rf_settings"))
 tg <- dplyr::bind_rows(lapply(c("AGC", "AGC_GSE_SUB", "AGC_S2", "AGC_S2MED"), function(m) {
   f <- sprintf("P4_tuning_%s.csv", m)
   if (have(f)) src(f) |> dplyr::mutate(model = m) else NULL
@@ -620,8 +622,8 @@ if (!is.null(bp)) {
     `mtry grid` = dplyr::coalesce(mtry_set, "–"),
     `Variables per split (mtry)` = num(mtry, 0), `Minimum node size` = num(min_node_size, 0),
     `Sample fraction` = num(sample_fraction, 1),
-    `Tuning CV RMSE` = num(RMSE, 2), `Tuning CV MAE` = num(MAE, 2),
-    !!paste("Tuning CV", R2) := num(R2, 3), `Tuning CV MEC` = num(MEC, 3), `Tuning CV bias (%)` = num(bias_pct, 2),
+    `Tuning RMSE` = num(RMSE, 2), `Tuning MAE` = num(MAE, 2),
+    !!paste("Tuning", R2) := num(R2, 3), `Tuning MEC` = num(MEC, 3), `Tuning bias (%)` = num(bias_pct, 2),
     `Settings in the grid (n)` = num(n_set, 0),
     `RMSE range over the grid` = span(rmse_min, rmse_max, 2))
   save_table("rf_settings",
@@ -634,9 +636,9 @@ if (!is.null(bp)) {
 }
 
 # =============================================================================
-# S7: national AGC by year and method
+# national_year: national AGC by year and method
 # =============================================================================
-step("S7")
+step(tref("national_year"))
 if (!is.null(nat3)) {
   w <- function(m) nat3 |> dplyr::filter(method == m) |> dplyr::select(year, total_kt, ci_low_kt, ci_up_kt)
   px <- w("Pixel-based GSE"); t1y <- w("Tier 1 (survey-year mean)"); t1p <- w("Tier 1 (pooled mean)")
@@ -671,8 +673,8 @@ if (!is.null(nat3)) {
   derive("t1_year_min_tC", 1e3 * min(b$ty, na.rm = TRUE), "lowest Tier 1 survey-year total")
   derive("t1_year_max_tC", 1e3 * max(b$ty, na.rm = TRUE), "highest Tier 1 survey-year total")
   notes7 <- c(sprintf("All methods use the same fixed extent of %s %s (2017-2024).", num(AREA, 2), KM2),
-              "Pixel-based CI: 1.96 x cluster-robust SE of the mean out-of-fold residual (cluster design) x extent (Table S10).",
-              "Tier 1 and Tier 2 CIs use n / DEFF as the effective sample size; Tier 2 is stratified by ecoregion (Table S9).",
+              paste0("Pixel-based CI: 1.96 x cluster-robust SE of the mean out-of-fold residual (cluster design) x extent (", tref("uncertainty"), ")."),
+              paste0("Tier 1 and Tier 2 CIs use n / DEFF as the effective sample size; Tier 2 is stratified by ecoregion (", tref("tier2_strata"), ")."),
               "Tier 1 and Tier 2 pooled over the survey years are constant because the extent is fixed.",
               "† No field data in 2024: the CI assumes the 2017-2023 bias SE.",
               if (any(!is.na(b$ty) & is.na(b$tyl))) sprintf("‡ Effective sample size below 2 (n = %s): no CI.",
@@ -684,9 +686,9 @@ if (!is.null(nat3)) {
 }
 
 # =============================================================================
-# S8: Tier 1 by survey year and the survey composition
+# tier1_year: Tier 1 by survey year and the survey composition
 # =============================================================================
-step("S8")
+step(tref("tier1_year"))
 yco <- src("P4_year_composition.csv")
 if (!is.null(t1g)) {
   comp <- if (!is.null(yco)) yco |> dplyr::group_by(year) |> dplyr::arrange(dplyr::desc(share), .by_group = TRUE) |>
@@ -703,13 +705,13 @@ if (!is.null(t1g)) {
   save_table("tier1_year",
              "Field AGC by survey year (the Tier 1 factors) and the ecoregions that dominate each year's samples.",
              S8, c("Survey year and region are confounded: differences between years mostly reflect where the surveys took place.",
-                   "Effective n = n / DEFF (Table S10). No CI where the effective sample size is below 2."))
+                   paste0("Effective n = n / DEFF (", tref("uncertainty"), "). No CI where the effective sample size is below 2.")))
 }
 
 # =============================================================================
-# S9: Tier 2 strata
+# tier2_strata: Tier 2 strata
 # =============================================================================
-step("S9")
+step(tref("tier2_strata"))
 t2s <- src("P4_tier2_eco_strata.csv")
 if (!is.null(t2e)) {
   lr <- if (!is.null(lyr)) lyr |> dplyr::filter(stratum %in% TRUE, ecoregion != "National") |>
@@ -757,9 +759,9 @@ if (!is.null(t2e)) {
 }
 
 # =============================================================================
-# S10: clustering, uncertainty parameters and checks of the totals
+# uncertainty: clustering, uncertainty parameters and checks of the totals
 # =============================================================================
-step("S10")
+step(tref("uncertainty"))
 up <- src("P4_uncertainty_params.csv"); csm <- src("P4_cluster_summary.csv")
 if (!is.null(up)) {
   lab <- c(ICC = "Intra-cluster correlation of out-of-fold residuals",
@@ -828,9 +830,9 @@ if (!is.null(up)) {
 }
 
 # =============================================================================
-# S11: sample-level accuracy by design, method and sample set
+# sample_level: sample-level accuracy by design, method and sample set
 # =============================================================================
-step("S11")
+step(tref("sample_level"))
 if (!is.null(ms)) {
   sh <- if (!is.null(dcd)) setNames(dcd$area_pct, dcd$design) else setNames(rep(NA_real_, 5), DESIGN_LEVELS)
   sa <- if (!is.null(dcd) && "agc_pct_mean" %in% names(dcd)) setNames(dcd$agc_pct_mean, dcd$design) else
@@ -861,15 +863,15 @@ if (!is.null(ms)) {
              "Out-of-fold accuracy of AGC at the sample level by validation design, estimation method and sample set.",
              S11, c(sprintf("Mean over %s repeats of %s-fold CV (ecoregion design: %s seeds, one fold per ecoregion), with the 2.5-97.5 percentile range in brackets.",
                             nrep$n_repeats[nrep$design == "pixel"][1], CFG$k_folds, nrep$n_repeats[nrep$design == "ecoregion"][1]),
-                    "Distance range: distance from an extent pixel to the nearest AGC sample that this design represents; share of extent and of the mean annual pixel-based AGC in that range (Table S14).",
+                    paste0("Distance range: distance from an extent pixel to the nearest AGC sample that this design represents; share of extent and of the mean annual pixel-based AGC in that range (", tref("dist_cv"), ")."),
                     "Median distance to training: median distance from a test sample to the nearest training sample in that design (all AGC samples).",
-                    "Methods equal by definition in a design share one row. Sentinel-2 set: Table S5."))
+                    paste0("Methods equal by definition in a design share one row. Sentinel-2 set: ", tref("s2_avail"), ".")))
 }
 
 # =============================================================================
-# S12: site-level accuracy by ecoregion
+# site_eco: site-level accuracy by ecoregion
 # =============================================================================
-step("S12")
+step(tref("site_eco"))
 sbe <- src("P4_inventory_site_by_ecoregion.csv")
 if (!is.null(sbe)) {
   ordr <- sbe |> dplyr::filter(sample_set == "all") |> dplyr::distinct(ecoregion, n_sites) |>
@@ -896,9 +898,9 @@ if (!is.null(sbe)) {
 }
 
 # =============================================================================
-# S13: accuracy for each ecoregion when it is held out
+# lolo: accuracy for each ecoregion when it is held out
 # =============================================================================
-step("S13")
+step(tref("lolo"))
 me <- src("P4_metrics_ecoregion.csv"); mew <- src("P4_metrics_ecoregion_equal_weight.csv")
 lolo <- src("P4_lolo_region_means.csv")
 if (!is.null(me)) {
@@ -932,9 +934,9 @@ if (!is.null(me)) {
 }
 
 # =============================================================================
-# S14: distance to AGC samples and between-year CV by ecoregion
+# dist_cv: distance to AGC samples and between-year CV by ecoregion
 # =============================================================================
-step("S14")
+step(tref("dist_cv"))
 dce <- src("P4_distance_coverage_eco.csv"); cvs <- src("P4_cv_summary.csv")
 if (!is.null(dce)) {
   cvw <- if (!is.null(cvs)) cvs |>
